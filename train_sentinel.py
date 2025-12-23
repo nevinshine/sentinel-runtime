@@ -77,9 +77,12 @@ def main():
             f"Normal Score: {normal_score:.3f} | "
             f"Attack Score: {attack_score:.3f}"
         )
+    torch.save(model.state_dict(), "sentinel_model.pt")
+    print("[✓] Model saved to sentinel_model.pt")
+
 
     print("✅ Training completed without crashing.")
-
+    
 
 if __name__ == "__main__":
     main()

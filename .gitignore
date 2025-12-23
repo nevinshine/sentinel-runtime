@@ -12,5 +12,8 @@ __pycache__/
 # Editor junk
 .vscode/
 
+# Trained model
+sentinel_model.pt
+
 # Datasets (download separately)
 data/unsw/*.csv
