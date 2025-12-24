@@ -13,7 +13,7 @@ __pycache__/
 .vscode/
 
 # Trained model
-sentinel_model.pt
-
+*.pt
+checkpoints/
 # Datasets (download separately)
 data/unsw/*.csv

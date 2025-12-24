@@ -5,14 +5,14 @@ import torch
 
 class SentinelBridge:
     """
-    Interface between Linux Kernel syscalls and Weightless Neural Networks.
+    Kernel → DWN Bridge
 
     Pipeline:
-    1. Syscall stream (e.g. [59, 12, 1, ...])
-    2. Sliding window over syscalls
-    3. Temporal bucketing (coarse ordering)
-    4. Histogram per bucket
-    5. Thermometer encoding -> binary vector
+    1. Syscall stream (pid, syscall_nr, arg_class)
+    2. Sliding windows
+    3. Absolute temporal bucketing
+    4. Joint-ID histogram (syscall × bucket + arg_class)
+    5. Thermometer encoding
     """
 
     def __init__(
@@ -27,101 +27,121 @@ class SentinelBridge:
         self.resolution = thermometer_resolution
         self.num_buckets = num_buckets
 
-        # Total input dimension after bucketing
-        self.total_input_bits = (
-            (self.max_syscall + 1)
-            * self.resolution
-            * self.num_buckets
-        )
+        # Joint ID space: (syscall_id * num_buckets) + arg_class
+        self.num_bins = (self.max_syscall + 1) * self.num_buckets
 
-    def encode_thermometer(self, histogram):
+        # Final binary dimensionality
+        self.total_input_bits = self.num_bins * self.resolution * self.num_buckets
+
+    # -------------------------------------------------------------
+
+    def encode_thermometer(self, histogram: np.ndarray) -> np.ndarray:
         """
-        Converts integer counts into thermometer encoding.
+        Fixed-length thermometer encoding.
 
-        Example (resolution=4):
-        count = 2 -> [1, 1, 0, 0]
-        count = 0 -> [0, 0, 0, 0]
+        histogram shape: [num_bins]
+        output shape:    [num_bins * resolution]
         """
-        counts = np.clip(histogram, 0, self.resolution)
+        histogram = np.clip(histogram, 0, self.resolution).astype(np.int64)
 
-        range_matrix = np.arange(self.resolution).reshape(1, -1)
-        counts_matrix = counts.reshape(-1, 1)
+        levels = np.arange(self.resolution).reshape(1, -1)
+        expanded = histogram.reshape(-1, 1)
 
-        binary_matrix = (range_matrix < counts_matrix).astype(np.float32)
-        return binary_matrix.flatten()
+        binary = (levels < expanded).astype(np.float32)
+        return binary.flatten()
+
+    # -------------------------------------------------------------
 
     def process_log(self, file_path):
-        """
-        Reads sentinel_log.csv and returns:
-        - x_tensor: binary feature matrix
-        - y_tensor: labels (currently all 0 = normal)
-        """
-        print(f"🔄 BRIDGE: Processing {file_path}...")
+        print(f"[BRIDGE] Processing {file_path}...")
 
         try:
             df = pd.read_csv(file_path)
         except Exception as e:
-            print(f"❌ ERROR: Could not read log: {e}")
+            print(f"⚠️ Error reading file: {e}")
             return None, None
 
         if df.empty:
-            print("⚠️ WARNING: Log is empty.")
+            print("⚠️ Empty trace file")
             return None, None
 
-        grouped = df.groupby("pid")["syscall_nr"].apply(list)
+        required = {"pid", "syscall_nr", "arg_class"}
+        if not required.issubset(df.columns):
+            raise RuntimeError(f"Missing required columns: {required}")
 
-        binary_samples = []
+        samples = []
         labels = []
 
-        for pid, trace in grouped.items():
-            if len(trace) < self.window_size:
+        grouped = df.groupby("pid")
+
+        for pid, proc in grouped:
+            if len(proc) < self.window_size:
                 continue
 
-            step = self.window_size // 2  # 50% overlap
+            step = self.window_size // 2
             bucket_size = self.window_size // self.num_buckets
 
-            for i in range(0, len(trace) - self.window_size, step):
-                window = trace[i : i + self.window_size]
+            # Sliding window over full process trace
+            for start in range(0, len(proc) - self.window_size + 1, step):
 
-                bucket_features = []
+                bucket_bits = []
 
+                # --- ABSOLUTE TEMPORAL BUCKETING ---
                 for b in range(self.num_buckets):
-                    start = b * bucket_size
-                    end = start + bucket_size
-                    bucket = window[start:end]
+                    b_start = start + b * bucket_size
+                    b_end = b_start + bucket_size
 
-                    hist = np.bincount(
-                        bucket,
-                        minlength=self.max_syscall + 1,
-                    )
+                    # Slice directly from full trace
+                    sub = proc.iloc[b_start:b_end]
 
-                    if len(hist) > self.max_syscall + 1:
-                        hist = hist[: self.max_syscall + 1]
+                    # STRUCTURAL SAFETY: partial bucket → zero histogram
+                    if len(sub) < bucket_size:
+                        hist = np.zeros(self.num_bins, dtype=np.int64)
+                    else:
+                        s_nr = sub["syscall_nr"].astype(np.int64).values
+                        a_cls = sub["arg_class"].astype(np.int64).values
 
-                    binary = self.encode_thermometer(hist)
-                    bucket_features.append(binary)
+                        # Joint categorical ID
+                        joint_ids = s_nr * self.num_buckets + a_cls
 
-                # Concatenate buckets (temporal order preserved)
-                binary_vec = np.concatenate(bucket_features)
-                binary_samples.append(binary_vec)
-                labels.append(0)  # normal
+                        # VALUE SAFETY: clamp to fixed categorical space
+                        joint_ids = np.clip(
+                            joint_ids,
+                            0,
+                            self.num_bins - 1
+                        )
 
-        if not binary_samples:
-            print("⚠️ WARNING: No valid windows found (traces too short).")
+                        hist = np.bincount(
+                            joint_ids,
+                            minlength=self.num_bins
+                        )
+
+                    # Encode each bucket independently
+                    bucket_bits.append(self.encode_thermometer(hist))
+
+                # Concatenate fixed-size bucket encodings
+                binary_vec = np.concatenate(bucket_bits)
+
+                samples.append(binary_vec)
+                labels.append(0)  # normal-only training
+
+        if not samples:
+            print("⚠️ No valid windows generated")
             return None, None
 
-        x_tensor = torch.tensor(
-            np.array(binary_samples),
-            dtype=torch.float32,
-        )
-        y_tensor = torch.tensor(
-            np.array(labels),
-            dtype=torch.long,
-        )
+        # ---------- FINAL SAFETY CHECK ----------
+        lengths = {len(v) for v in samples}
+        print(f"Unique sample lengths: {lengths}")
+
+        if len(lengths) != 1:
+            raise RuntimeError(f"Inconsistent sample lengths: {lengths}")
+
+        x = torch.tensor(np.array(samples), dtype=torch.float32)
+        y = torch.tensor(labels, dtype=torch.long)
 
         print(
-            f"✅ BRIDGE: Generated {x_tensor.shape[0]} samples. "
-            f"Input Dim: {x_tensor.shape[1]} bits."
+            f"[BRIDGE] Generated {x.shape[0]} samples. "
+            f"Input Dim: {x.shape[1]} bits."
         )
 
-        return x_tensor, y_tensor
+        return x, y
