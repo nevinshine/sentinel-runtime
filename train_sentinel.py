@@ -17,7 +17,7 @@ def main():
     bridge = SentinelBridge(
         window_size=100,
         max_syscall=335,
-        thermometer_resolution=8
+        resolution=8
     )
 
     x, y = bridge.process_log("sentinel_log.csv")
@@ -36,9 +36,7 @@ def main():
     # -----------------------------
     model = DWNClassifier(
         num_inputs=x.shape[1],
-        tuple_size=4,
-        num_classes=2
-    ).to(device)
+    )
 
     # -----------------------------
     # 3. Optimizer & Loss

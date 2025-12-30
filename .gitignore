@@ -17,3 +17,12 @@ __pycache__/
 checkpoints/
 # Datasets (download separately)
 data/unsw/*.csv
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Generated artifacts
+*.png
+*.npy

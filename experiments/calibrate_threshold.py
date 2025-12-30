@@ -13,10 +13,11 @@ OUT_PATH = "checkpoints/thresholds.json"
 def main():
     print("[*] Loading Sentinel Bridge...")
     bridge = SentinelBridge(
-        window_size=100,
-        thermometer_resolution=8,
-        num_buckets=4
-    )
+    window_size=100,
+    num_buckets=4,
+    resolution=8
+)
+
 
     X, _ = bridge.process_log(TRACE_PATH)
     if X is None:
