@@ -1,142 +1,128 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
 #include <string.h>
-
+#include <errno.h>
+#include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
-/*
- * ARGUMENT CLASSIFICATION
- * 0 = other / unknown
- * 1 = system files (/etc, /bin, /lib)
- * 2 = proc/sys files (/proc, /sys)
- * 3 = user files (/home, /tmp)
- */
-int classify_path(const char *path) {
-    if (!path) return 0;
+// --- MEMORY EXTRACTION ENGINE (The "Teleporter") ---
 
-    if (strncmp(path, "/etc", 4) == 0 ||
-        strncmp(path, "/bin", 4) == 0 ||
-        strncmp(path, "/lib", 4) == 0)
-        return 1;
-
-    if (strncmp(path, "/proc", 5) == 0 ||
-        strncmp(path, "/sys", 4) == 0)
-        return 2;
-
-    if (strncmp(path, "/home", 5) == 0 ||
-        strncmp(path, "/tmp", 4) == 0)
-        return 3;
-
-    return 0;
-}
-
-/*
- * SAFELY READ STRING FROM CHILD MEMORY
- */
-void read_child_string(pid_t pid, unsigned long addr, char *buf, size_t maxlen) {
-    size_t i = 0;
-    long word;
-
-    while (i < maxlen - sizeof(long)) {
-        word = ptrace(PTRACE_PEEKDATA, pid, addr + i, NULL);
-        if (word == -1) break;
-
-        memcpy(buf + i, &word, sizeof(long));
-
-        if (memchr(&word, 0, sizeof(long)) != NULL)
-            break;
-
-        i += sizeof(long);
-    }
-
-    buf[maxlen - 1] = '\0';
-}
-
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <program_to_trace>\n", argv[0]);
-        return 1;
-    }
-
-    FILE *log_file = fopen("sentinel_log.csv", "w");
-    if (!log_file) {
-        perror("fopen");
-        return 1;
-    }
-
-    fprintf(log_file, "pid,syscall_nr,arg_class\n");
-    fflush(log_file);
-
-    pid_t child = fork();
-
-    if (child == 0) {
-        /* CHILD */
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-        raise(SIGSTOP);
-        execvp(argv[1], &argv[1]);
-        perror("execvp");
-        exit(1);
-    }
-
-    /* PARENT */
-    int status;
-    int in_syscall = 0;
-    struct user_regs_struct regs;
-
-    waitpid(child, &status, 0);
-    ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_TRACESYSGOOD);
+// Helper: Read a string from the child's memory
+// Input: Child PID, Address in Child's Virtual Memory
+// Output: Heap-allocated string (YOU MUST FREE THIS)
+char *read_string(pid_t child, unsigned long long addr) {
+    int allocated = 64;
+    int read_bytes = 0;
+    char *val = malloc(allocated);
+    unsigned long long tmp;
 
     while (1) {
-        ptrace(PTRACE_SYSCALL, child, 0, 0);
-        waitpid(child, &status, 0);
+        // 1. Expand buffer if needed
+        if (read_bytes + sizeof(tmp) > allocated) {
+            allocated *= 2;
+            val = realloc(val, allocated);
+        }
 
-        if (WIFEXITED(status))
+        // 2. PEEKDATA: Read 8 bytes (one word) from child
+        errno = 0;
+        tmp = ptrace(PTRACE_PEEKDATA, child, addr + read_bytes, NULL);
+        
+        if (errno != 0) {
+            val[read_bytes] = 0; // Terminate on error
             break;
+        }
 
-        if (WIFSTOPPED(status) &&
-            WSTOPSIG(status) == (SIGTRAP | 0x80)) {
+        // 3. Copy bytes to our buffer
+        memcpy(val + read_bytes, &tmp, sizeof(tmp));
 
-            if (!in_syscall) {
-                /* SYSCALL ENTRY */
-                ptrace(PTRACE_GETREGS, child, 0, &regs);
-
-                long syscall_nr = regs.orig_rax;
-                int arg_class = 0;
-
-                if (syscall_nr == SYS_open) {
-    char path[256] = {0};
-    unsigned long path_addr = regs.rdi;
-
-    read_child_string(child, path_addr, path, sizeof(path));
-    arg_class = classify_path(path);
-
-} else if (syscall_nr == SYS_openat) {
-    char path[256] = {0};
-    unsigned long path_addr = regs.rsi;  // <-- FIX HERE
-
-    read_child_string(child, path_addr, path, sizeof(path));
-    arg_class = classify_path(path);
-}
-
-
-                fprintf(log_file, "%d,%ld,%d\n",
-                        child, syscall_nr, arg_class);
-
-                in_syscall = 1;
-            } else {
-                /* SYSCALL EXIT — ignore */
-                in_syscall = 0;
+        // 4. Scan for NULL terminator
+        int done = 0;
+        for (int i = 0; i < sizeof(tmp); i++) {
+            if (val[read_bytes + i] == 0) {
+                done = 1;
+                break;
             }
         }
+        
+        read_bytes += sizeof(tmp);
+        if (done) break;
+    }
+    return val;
+}
+
+// --- MAIN SENTINEL LOGIC ---
+
+int main(int argc, char *argv[]) {
+    pid_t child_pid;
+
+    printf("[SENTINEL] 🟢 Starting Runtime Verification Engine v0.6...\n");
+
+    child_pid = fork();
+
+    if (child_pid == 0) {
+        // --- CHILD (The Subject) ---
+        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+        
+        // Execute the Iron Shell (launcher)
+        // Ensure ./launcher exists in the same folder!
+        char *args[] = {"./launcher", NULL};
+        execvp(args[0], args);
+        
+        // Fallback if launcher is missing
+        perror("[CHILD] Exec failed");
+        exit(1);
+
+    } else {
+        // --- PARENT (The Sentinel) ---
+        int status;
+        struct user_regs_struct regs;
+        
+        waitpid(child_pid, &status, 0); // Wait for exec start
+        ptrace(PTRACE_SYSCALL, child_pid, 0, 0); // Start tracing
+
+        while(1) {
+            waitpid(child_pid, &status, 0);
+            if (WIFEXITED(status)) break;
+
+            // Get CPU State
+            ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+
+            // --- INTERCEPTION LOGIC ---
+
+            // 1. DETECT WRITE (Printing to screen)
+            // RDI = FD (1 is stdout), RSI = String Address, RDX = Length
+            if (regs.orig_rax == 1 && regs.rdi == 1) {
+                char *text = read_string(child_pid, regs.rsi);
+                
+                printf("\n[SENTINEL] 👁️  INTERCEPTED OUTPUT:\n");
+                printf("    ├── Source:    Syscall::WRITE (1)\n");
+                printf("    ├── Length:    %llu bytes\n", regs.rdx);
+                printf("    └── Payload:   \"%s\"\n", text);
+                
+                free(text);
+            }
+
+            // 2. DETECT FILE OPEN (Accessing disk)
+            // RSI = File Path Address for OPENAT (257)
+            if (regs.orig_rax == 257) {
+                char *path = read_string(child_pid, regs.rsi);
+                
+                printf("\n[SENTINEL] 📂 INTERCEPTED FILE ACCESS:\n");
+                printf("    ├── Source:    Syscall::OPENAT (257)\n");
+                printf("    └── Target:    \"%s\"\n", path);
+                
+                free(path);
+            }
+
+            // Resume
+            ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
+        }
+        printf("[SENTINEL] 🔴 Subject exited. Surveillance complete.\n");
     }
 
-    printf("[Sentinel] Trace complete. PID %d exited.\n", child);
-    fclose(log_file);
     return 0;
 }
