@@ -72,7 +72,7 @@ gcc launcher.c -o launcher
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 * **Core Engine:** C (Linux API, ptrace, waitpid)
 * **Analysis:** Python 3.10+, PyTorch (Custom Autograd)
@@ -80,7 +80,7 @@ gcc launcher.c -o launcher
 
 ---
 
-## 📚 References
+## References
 
 * **ptrace(2) man page** – Linux Programmer's Manual
 * **DWN:** Bacellar et al., *"Differentiable Weightless Neural Networks"*, ICML 2024
