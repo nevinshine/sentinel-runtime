@@ -58,68 +58,69 @@ char *read_string(pid_t child, unsigned long long addr) {
 
 int main(int argc, char *argv[]) {
     pid_t child_pid;
-
-    printf("[SENTINEL] 🟢 Starting Runtime Verification Engine v0.6...\n");
+    printf("[SENTINEL] 🛡️  Phase 7: Active Policy Enforcement Engine\n");
 
     child_pid = fork();
 
     if (child_pid == 0) {
-        // --- CHILD (The Subject) ---
+        // --- CHILD (The Victim) ---
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
         
-        // Execute the Iron Shell (launcher)
-        // Ensure ./launcher exists in the same folder!
+        // Ensure ./launcher exists in the root folder!
         char *args[] = {"./launcher", NULL};
         execvp(args[0], args);
         
-        // Fallback if launcher is missing
         perror("[CHILD] Exec failed");
         exit(1);
 
     } else {
-        // --- PARENT (The Sentinel) ---
+        // --- PARENT (The Guard) ---
         int status;
         struct user_regs_struct regs;
         
         waitpid(child_pid, &status, 0); // Wait for exec start
-        ptrace(PTRACE_SYSCALL, child_pid, 0, 0); // Start tracing
+        ptrace(PTRACE_SETOPTIONS, child_pid, 0, PTRACE_O_TRACESYSGOOD);
 
         while(1) {
+            // 1. Wait for Syscall ENTRY
+            ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
             waitpid(child_pid, &status, 0);
             if (WIFEXITED(status)) break;
 
-            // Get CPU State
+            // 2. Get CPU State
             ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
 
-            // --- INTERCEPTION LOGIC ---
-
-            // 1. DETECT WRITE (Printing to screen)
-            // RDI = FD (1 is stdout), RSI = String Address, RDX = Length
-            if (regs.orig_rax == 1 && regs.rdi == 1) {
-                char *text = read_string(child_pid, regs.rsi);
-                
-                printf("\n[SENTINEL] 👁️  INTERCEPTED OUTPUT:\n");
-                printf("    ├── Source:    Syscall::WRITE (1)\n");
-                printf("    ├── Length:    %llu bytes\n", regs.rdx);
-                printf("    └── Payload:   \"%s\"\n", text);
-                
-                free(text);
-            }
-
-            // 2. DETECT FILE OPEN (Accessing disk)
-            // RSI = File Path Address for OPENAT (257)
+            // 3. CHECK POLICY: Is this an OPENAT (257) or OPEN (2)?
+            // Note: Modern Linux mostly uses openat (257).
             if (regs.orig_rax == 257) {
+                // RSI holds the address of the file path string
                 char *path = read_string(child_pid, regs.rsi);
                 
-                printf("\n[SENTINEL] 📂 INTERCEPTED FILE ACCESS:\n");
-                printf("    ├── Source:    Syscall::OPENAT (257)\n");
-                printf("    └── Target:    \"%s\"\n", path);
+                // --- THE BLOCKING LOGIC ---
+                // If they touch "/etc/passwd", we kill the request.
+                if (strstr(path, "passwd") != NULL) {
+                    
+                    printf("\n[SENTINEL] 🚫 BLOCKED MALICIOUS ACCESS!\n");
+                    printf("    ├── Target:  \"%s\"\n", path);
+                    printf("    └── Action:  SYSCALL CANCELLED (-1)\n");
+
+                    // 🛑 THE JEDI MIND TRICK 🛑
+                    // We set the syscall number to -1 so the kernel ignores it.
+                    regs.orig_rax = -1; 
+                    ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);
                 
+                } else {
+                    // Allowed files (like libraries)
+                    printf("[SENTINEL] ✅ ALLOWED: \"%s\"\n", path);
+                }
                 free(path);
             }
 
-            // Resume
+            // 4. Wait for Syscall EXIT
+            // We must step over the exit, even if we cancelled it, to stay in sync.
             ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
+            waitpid(child_pid, &status, 0);
+            if (WIFEXITED(status)) break;
         }
         printf("[SENTINEL] 🔴 Subject exited. Surveillance complete.\n");
     }

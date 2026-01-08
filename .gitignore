@@ -1,28 +1,4 @@
-# Runtime logs
-sentinel_log.csv
-sentinel_log.tmp
-
-# Binaries
-sentinel
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Editor junk
-.vscode/
-
-# Trained model
-*.pt
-checkpoints/
-# Datasets (download separately)
-data/unsw/*.csv
-
-# Python
-.venv/
-__pycache__/
-*.pyc
-
-# Generated artifacts
-*.png
-*.npy
+sentinel_v0.6
+launcher
+*.o
+*.csv
