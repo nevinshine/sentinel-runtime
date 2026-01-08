@@ -1,6 +1,6 @@
 # Sentinel Runtime
 
-> **Status:** Active Research (v0.5 – Anomaly Engine)  
+> **Status:** Active Research (v0.6 – Memory Extraction)  
 > **Focus:** Linux Runtime Verification, Syscall Interception, Behavioral Anomaly Detection  
 > **Maintainer:** Nevin Shine (Systems Security Research Engineer)
 
@@ -29,7 +29,7 @@ Located in `analysis/` and `models/`.
 ---
 
 ## Current Capabilities (v0.5)
-
+- **Deep Introspection:** ptrace(PTRACE_PEEKDATA) memory extraction to read syscall arguments (file paths, strings) from child process memory.
 - **Process Control:** Full lifecycle management (fork/exec/wait) of child processes.
 - **Syscall Tracing:** Real-time interception of syscall numbers (identity).
 - **Register Decoding:** Extraction of raw register values (arguments).
@@ -41,9 +41,9 @@ Located in `analysis/` and `models/`.
 
 The project investigates: *What is the minimum observability required to reliably detect intent?*
 
-- **v0.5 (Current):** Anomaly Engine (Numbers & sequences).
-- **v0.6 (Next):** Memory Extraction (Deep argument inspection via `PTRACE_PEEKDATA`).
-- **v0.7:** Online Anomaly Scoring (Real-time blocking).
+- **v0.5:** Anomaly Engine (Numbers & sequences).
+- **v0.6 (Current):** Memory Extraction (Deep argument inspection via PTRACE_PEEKDATA).
+- **v0.7 (Next):** Online Anomaly Scoring (Real-time blocking).
 - **v0.8:** Policy Enforcement (Preventing specific syscalls).
 
 ---
