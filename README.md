@@ -1,108 +1,67 @@
-# 🛡️ Sentinel Sandbox
+# Sentinel Runtime
 
-> **Status:** Active Research (v0.1 – Kernel Baseline)  
-> **Focus:** Linux Kernel Security, Syscall Analysis, Weightless ML, MLSecOps  
-> **Maintainer:** Nevin Shine  
+> **Status:** Active Research (v0.5 – Anomaly Engine)  
+> **Focus:** Linux Runtime Verification, Syscall Interception, Behavioral Anomaly Detection  
+> **Maintainer:** Nevin Shine (Systems Security Research Engineer)
 
----
+## Abstract
 
-## 🔍 Overview
-
-**Sentinel Sandbox** is a lightweight, **ptrace-based Linux runtime analysis system** designed to detect anomalous and potentially malicious program behavior through **system call behavior modeling**.
-
-Unlike traditional sandboxes that rely on heavy virtualization (e.g., Cuckoo, VMware), Sentinel operates **directly on the host kernel**, intercepting system calls in real time with minimal overhead.
-
-### 🎯 Research Goal
-
-To investigate the effectiveness of **Differentiable Weightless Neural Networks (DWN)** for detecting **zero-day behavioral anomalies** in Linux binaries using **raw syscall traces**, under **CPU-only and resource-constrained environments**.
+Sentinel Runtime is a lightweight Linux runtime security system designed to observe and analyze program behavior at execution time. Instead of relying on static signatures or binary inspection, Sentinel intercepts Linux system calls using `ptrace` and models their behavior to detect anomalous or malicious execution patterns. The project explores how syscall-level observability can provide a reliable ground truth for security analysis, even in the presence of obfuscation or AI-generated malware.
 
 ---
 
-## 🏗️ System Architecture
+## Architecture
 
-Sentinel operates as a three-layer research system:
+Sentinel is intentionally split into two distinct layers to separate mechanism from policy:
 
-1. **The Interceptor (C / Kernel Space)**  
-   A custom `ptrace`-based tracer that halts process execution at syscall **entry points** and records syscall numbers (`orig_rax`) with strict semantic correctness.
+### 1. Systems Layer (C / Kernel Space)
+Located in `src/`.
+- **Runtime Monitor:** A custom `ptrace`-based tracer.
+- **Interception:** Halts process execution at syscall entry/exit points.
+- **Introspection:** Extracts syscall numbers (`orig_rax`) and CPU register states (`RDI`, `RSI`, `RDX`) directly from the kernel struct `user_regs_struct`.
 
-2. **The Bridge (Python / Data Interface)**  
-   A deterministic transformation pipeline that converts syscall streams into fixed-length **binary representations** using:
-   - Sliding windows
-   - Bag-of-syscalls histograms
-   - Thermometer encoding (Hamming-distance preserving)
-
-3. **The Brain (Python / PyTorch)**  
-   A custom **Differentiable Weightless Neural Network (DWN)** trained using **Extended Finite Difference (EFD)**, enabling gradient-based learning over discrete lookup tables while preserving logic-based inference.
-
----
-
-## 🧠 Machine Learning Core
-
-- **Architecture:** Multi-discriminator Weightless Neural Network (WiSARD / ULEEN style)
-- **Training:** Differentiable via Extended Finite Difference (EFD)
-- **Inference:** Pure lookup-table based (no matrix multiplication)
-- **Execution:** CPU-only, no GPU dependency
-
-This design allows Sentinel to combine:
-- interpretability
-- low latency
-- hardware realizability
-- kernel-level behavioral fidelity
+### 2. Analysis Layer (Python / Data Space)
+Located in `analysis/` and `models/`.
+- **Bridge:** Converts raw syscall streams into fixed-length behavioral vectors (Thermometer Encoding).
+- **Brain:** A **Differentiable Weightless Neural Network (DWN)** that learns normal execution paths.
+- **Inference:** Uses strictly defined look-up tables (LUTs) for low-latency, CPU-only anomaly scoring.
 
 ---
 
-## 🗺️ Research Roadmap
+## Current Capabilities (v0.5)
 
-- [x] **Phase 1: Loader & Process Control**  
-  Process creation, PID control, syscall interception setup
-
-- [x] **Phase 2: Kernel Tracing**  
-  Accurate syscall entry tracing using `ptrace` (`orig_rax`, entry-only logging)
-
-- [x] **Phase 3: Data Representation Bridge**  
-  Sliding windows, histogram aggregation, thermometer encoding
-
-- [x] **Phase 4: DWN Integration**  
-  ICML-level EFD-based Differentiable Weightless Neural Network
-
-- [ ] **Phase 5: Anomaly Scoring & Detection**  
-  Normal-only training, abnormal trace scoring, thresholding
-
-- [ ] **Phase 6: Evaluation & Ablation Studies**  
-  Window size, encoding resolution, baseline comparisons
+- **Process Control:** Full lifecycle management (fork/exec/wait) of child processes.
+- **Syscall Tracing:** Real-time interception of syscall numbers (identity).
+- **Register Decoding:** Extraction of raw register values (arguments).
+- **Behavioral Modeling:** Offline training of anomaly detectors using Isolation Forests and DWNs.
 
 ---
 
-## 🛠️ Tech Stack
+## Roadmap & Research Direction
 
-- **Languages:** C (Kernel Tracing), Python (ML & Data Pipeline)
-- **Kernel APIs:** `ptrace`, `waitpid`, `user_regs_struct`
-- **ML Architecture:** Differentiable Weightless Neural Networks (DWN)
-- **Training Framework:** PyTorch (custom autograd)
-- **OS:** Ubuntu 24.04 LTS (Hardened Kernel)
+The project investigates: *What is the minimum observability required to reliably detect intent?*
 
----
-
-## 📚 Key References
-
-This work is grounded in the following research:
-
-- **ULEEN:**  
-  Susskind et al., *"ULEEN: A Novel Architecture for Ultra-Low-Energy Edge Neural Networks"*, TACO 2023
-
-- **DWN:**  
-  Bacellar et al., *"Differentiable Weightless Neural Networks"*, ICML 2024
-
-- **LogicNets:**  
-  Nag et al., *"LogicNets vs. ULEEN: Comparing Two Novel High-Throughput Edge ML Inference Techniques"*, MWSCAS
+- **v0.5 (Current):** Anomaly Engine (Numbers & sequences).
+- **v0.6 (Next):** Memory Extraction (Deep argument inspection via `PTRACE_PEEKDATA`).
+- **v0.7:** Online Anomaly Scoring (Real-time blocking).
+- **v0.8:** Policy Enforcement (Preventing specific syscalls).
 
 ---
 
-## 📌 Notes
+## Tech Stack
 
-- Runtime syscall logs (`sentinel_log.csv`) are **generated at execution time** and are intentionally excluded from version control.
-- The project prioritizes **semantic correctness and research reproducibility** over production hardening.
+- **Core Engine:** C (Linux API, ptrace, waitpid)
+- **Analysis:** Python 3.10+, PyTorch (Custom Autograd)
+- **Target OS:** Linux x86_64 (Tested on Ubuntu 24.04 Kernel 6.8)
 
 ---
 
-*Built by [Nevin Shine](https://www.linkedin.com/in/nevin-shine-b403b932b/) — Independent Researcher, Systems Security.*
+## References
+
+- **ptrace(2) man page** – Linux Programmer's Manual
+- **DWN:** Bacellar et al., *"Differentiable Weightless Neural Networks"*, ICML 2024
+- **ULEEN:** Susskind et al., *"Ultra-Low-Energy Edge Neural Networks"*, TACO 2023
+
+---
+
+*Built by [Nevin Shine](https://www.linkedin.com/in/nevin-shine-b403b932b/) — Systems Security Research Engineer.*
