@@ -1,129 +1,82 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
+/*
+ * Sentinel Runtime v0.7.1 (Sync-Fix)
+ * Status: Experimental Policy Enforcement
+ * Maintainer: Nevin Shine
+ */
+
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 
-// --- MEMORY EXTRACTION ENGINE (The "Teleporter") ---
-
-// Helper: Read a string from the child's memory
-// Input: Child PID, Address in Child's Virtual Memory
-// Output: Heap-allocated string (YOU MUST FREE THIS)
-char *read_string(pid_t child, unsigned long long addr) {
-    int allocated = 64;
-    int read_bytes = 0;
-    char *val = malloc(allocated);
-    unsigned long long tmp;
-
-    while (1) {
-        // 1. Expand buffer if needed
-        if (read_bytes + sizeof(tmp) > allocated) {
-            allocated *= 2;
-            val = realloc(val, allocated);
-        }
-
-        // 2. PEEKDATA: Read 8 bytes (one word) from child
-        errno = 0;
-        tmp = ptrace(PTRACE_PEEKDATA, child, addr + read_bytes, NULL);
-        
-        if (errno != 0) {
-            val[read_bytes] = 0; // Terminate on error
-            break;
-        }
-
-        // 3. Copy bytes to our buffer
-        memcpy(val + read_bytes, &tmp, sizeof(tmp));
-
-        // 4. Scan for NULL terminator
-        int done = 0;
-        for (int i = 0; i < sizeof(tmp); i++) {
-            if (val[read_bytes + i] == 0) {
-                done = 1;
-                break;
-            }
-        }
-        
-        read_bytes += sizeof(tmp);
-        if (done) break;
-    }
-    return val;
+void fatal(const char *msg) {
+    perror(msg);
+    exit(1);
 }
 
-// --- MAIN SENTINEL LOGIC ---
-
-int main(int argc, char *argv[]) {
-    pid_t child_pid;
-    printf("[SENTINEL] 🛡️  Phase 7: Active Policy Enforcement Engine\n");
-
-    child_pid = fork();
-
-    if (child_pid == 0) {
-        // --- CHILD (The Victim) ---
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-        
-        // Ensure ./launcher exists in the root folder!
-        char *args[] = {"./launcher", NULL};
-        execvp(args[0], args);
-        
-        perror("[CHILD] Exec failed");
-        exit(1);
-
-    } else {
-        // --- PARENT (The Guard) ---
-        int status;
-        struct user_regs_struct regs;
-        
-        waitpid(child_pid, &status, 0); // Wait for exec start
-        ptrace(PTRACE_SETOPTIONS, child_pid, 0, PTRACE_O_TRACESYSGOOD);
-
-        while(1) {
-            // 1. Wait for Syscall ENTRY
-            ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
-            waitpid(child_pid, &status, 0);
-            if (WIFEXITED(status)) break;
-
-            // 2. Get CPU State
-            ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-
-            // 3. CHECK POLICY: Is this an OPENAT (257) or OPEN (2)?
-            // Note: Modern Linux mostly uses openat (257).
-            if (regs.orig_rax == 257) {
-                // RSI holds the address of the file path string
-                char *path = read_string(child_pid, regs.rsi);
-                
-                // --- THE BLOCKING LOGIC ---
-                // If they touch "/etc/passwd", we kill the request.
-                if (strstr(path, "passwd") != NULL) {
-                    
-                    printf("\n[SENTINEL] 🚫 BLOCKED MALICIOUS ACCESS!\n");
-                    printf("    ├── Target:  \"%s\"\n", path);
-                    printf("    └── Action:  SYSCALL CANCELLED (-1)\n");
-
-                    // 🛑 THE JEDI MIND TRICK 🛑
-                    // We set the syscall number to -1 so the kernel ignores it.
-                    regs.orig_rax = -1; 
-                    ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);
-                
-                } else {
-                    // Allowed files (like libraries)
-                    printf("[SENTINEL] ✅ ALLOWED: \"%s\"\n", path);
-                }
-                free(path);
-            }
-
-            // 4. Wait for Syscall EXIT
-            // We must step over the exit, even if we cancelled it, to stay in sync.
-            ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
-            waitpid(child_pid, &status, 0);
-            if (WIFEXITED(status)) break;
-        }
-        printf("[SENTINEL] 🔴 Subject exited. Surveillance complete.\n");
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <program_to_trace>\n", argv[0]);
+        return 1;
     }
 
+    printf("[SENTINEL] v0.7.1: Active Policy Engine (Auto-Sync) Loading...\n");
+
+    pid_t child = fork();
+
+    if (child == 0) {
+        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+        raise(SIGSTOP);
+        execvp(argv[1], &argv[1]);
+        fatal("execvp failed");
+    } else {
+        int status;
+        struct user_regs_struct regs;
+
+        waitpid(child, &status, 0);
+        ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
+        
+        printf("[SENTINEL] Attached to PID: %d. Monitoring...\n", child);
+
+        while(1) {
+            ptrace(PTRACE_SYSCALL, child, NULL, NULL);
+            waitpid(child, &status, 0);
+            if (WIFEXITED(status)) break;
+
+            ptrace(PTRACE_GETREGS, child, NULL, &regs);
+
+            // --- SYNCHRONIZATION CHECK ---
+            // On x86_64, RAX is -ENOSYS (-38) on Entry.
+            // If it's -38, we are BEFORE execution. If not, we are AFTER.
+            if ((long)regs.rax == -38) {
+                
+                /* === SYSCALL ENTRY (WE CAN BLOCK HERE) === */
+                
+                if (regs.orig_rax == 83) { // mkdir
+                    printf("[BLOCK] 🛑 Malicious syscall ENTRY detected: mkdir (83)\n");
+                    
+                    // NEUTRALIZE: Set to -1
+                    regs.orig_rax = -1;
+                    ptrace(PTRACE_SETREGS, child, NULL, &regs);
+                    
+                    printf("[BLOCK] ⚡ Neutralized (converted to -1)\n");
+                }
+
+            } else {
+                /* === SYSCALL EXIT (TOO LATE) === */
+                // Debug: Did the block work? 
+                // If blocked, result should be -38 (-ENOSYS). If 0, we failed.
+                if (regs.orig_rax == 83) {
+                     printf("[AUDIT] mkdir finished. Kernel returned: %lld\n", (long long)regs.rax);
+                }
+            }
+        }
+        printf("[SENTINEL] Target process exited.\n");
+    }
     return 0;
 }
