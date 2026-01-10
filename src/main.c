@@ -1,9 +1,10 @@
 /*
- * Sentinel Runtime v0.7.1 (Sync-Fix)
- * Status: Experimental Policy Enforcement
+ * Sentinel Runtime v0.8 (Inspector)
+ * Status: Experimental Argument Extraction
  * Maintainer: Nevin Shine
  */
 
+#define _GNU_SOURCE
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -12,11 +13,45 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 
 void fatal(const char *msg) {
     perror(msg);
     exit(1);
+}
+
+/* * Helper: Read a string from the child's memory 
+ * Reads 8 bytes at a time until \0 is found.
+ */
+void read_string(pid_t child, unsigned long addr, char *buffer, int max_len) {
+    int bytes_read = 0;
+    unsigned long word;
+    char *ptr = (char *)&word;
+
+    while (bytes_read < max_len) {
+        // PEEKDATA returns a long (8 bytes on x64)
+        word = ptrace(PTRACE_PEEKDATA, child, addr + bytes_read, NULL);
+        
+        if (errno != 0 && bytes_read == 0) {
+            // Only fail if we couldn't read the very first word
+            perror("ptrace peekdata");
+            break;
+        }
+
+        // Copy bytes from the word to our buffer
+        for (int i = 0; i < sizeof(long); i++) {
+            if (bytes_read >= max_len) break;
+            
+            buffer[bytes_read] = ptr[i];
+            
+            if (buffer[bytes_read] == '\0') {
+                return; // End of string found
+            }
+            bytes_read++;
+        }
+    }
+    buffer[max_len - 1] = '\0'; // Ensure null-termination
 }
 
 int main(int argc, char **argv) {
@@ -25,7 +60,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    printf("[SENTINEL] v0.7.1: Active Policy Engine (Auto-Sync) Loading...\n");
+    printf("[SENTINEL] v0.8: Deep Argument Inspection Loading...\n");
 
     pid_t child = fork();
 
@@ -37,6 +72,7 @@ int main(int argc, char **argv) {
     } else {
         int status;
         struct user_regs_struct regs;
+        char filename[256]; // Buffer to hold the extracted string
 
         waitpid(child, &status, 0);
         ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
@@ -50,31 +86,27 @@ int main(int argc, char **argv) {
 
             ptrace(PTRACE_GETREGS, child, NULL, &regs);
 
-            // --- SYNCHRONIZATION CHECK ---
-            // On x86_64, RAX is -ENOSYS (-38) on Entry.
-            // If it's -38, we are BEFORE execution. If not, we are AFTER.
-            if ((long)regs.rax == -38) {
+            // --- SYSCALL ENTRY ---
+            if ((long)regs.rax == -38) { // -ENOSYS check
                 
-                /* === SYSCALL ENTRY (WE CAN BLOCK HERE) === */
-                
-                if (regs.orig_rax == 83) { // mkdir
-                    printf("[BLOCK] 🛑 Malicious syscall ENTRY detected: mkdir (83)\n");
-                    
-                    // NEUTRALIZE: Set to -1
-                    regs.orig_rax = -1;
-                    ptrace(PTRACE_SETREGS, child, NULL, &regs);
-                    
-                    printf("[BLOCK] ⚡ Neutralized (converted to -1)\n");
-                }
-
-            } else {
-                /* === SYSCALL EXIT (TOO LATE) === */
-                // Debug: Did the block work? 
-                // If blocked, result should be -38 (-ENOSYS). If 0, we failed.
+                // Inspect 'mkdir' (83)
                 if (regs.orig_rax == 83) {
-                     printf("[AUDIT] mkdir finished. Kernel returned: %lld\n", (long long)regs.rax);
+                    // ARGUMENT EXTRACTION
+                    // mkdir(pathname, mode) -> pathname is in RDI
+                    read_string(child, regs.rdi, filename, sizeof(filename));
+
+                    printf("[INSPECT] 🔍 Detected mkdir. Target: '%s'\n", filename);
+
+                    // POLICY: Only block if path contains "malware"
+                    if (strstr(filename, "malware") != NULL) {
+                        printf("[BLOCK] 🛑 Blocking malicious path: %s\n", filename);
+                        regs.orig_rax = -1;
+                        ptrace(PTRACE_SETREGS, child, NULL, &regs);
+                    } else {
+                        printf("[ALLOW] ✅ Path seems safe: %s\n", filename);
+                    }
                 }
-            }
+            } 
         }
         printf("[SENTINEL] Target process exited.\n");
     }
