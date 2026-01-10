@@ -12,7 +12,7 @@
 
 **Sentinel Runtime** is a lightweight Linux runtime security system designed to observe, analyze, and intervene in program behavior at execution time.
 
-Unlike traditional AVs, Sentinel intercepts Linux system calls using \`ptrace\` to establish a semantic understanding of process intent. It can read syscall arguments (like file paths) in real-time and block malicious actions before the kernel executes them.
+Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It can read syscall arguments (like file paths) in real-time and block malicious actions before the kernel executes them.
 
 🔗 **Research Dossier:** [nevinshine.github.io/runtime-security-dossier](https://nevinshine.github.io/runtime-security-dossier/)
 
@@ -22,8 +22,8 @@ Unlike traditional AVs, Sentinel intercepts Linux system calls using \`ptrace\` 
 
 | Feature | Version | Status | Description |
 | :--- | :--- | :--- | :--- |
-| **Runtime Tracing** | v0.6 | ✅ **Stable** | Reliable interception of syscalls (\`ptrace\` entry/exit). |
-| **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting (\`orig_rax = -1\`). TOCTOU-safe. |
+| **Runtime Tracing** | v0.6 | ✅ **Stable** | Reliable interception of syscalls (`ptrace` entry/exit). |
+| **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting (`orig_rax = -1`). TOCTOU-safe. |
 | **Deep Introspection** | v0.8 | ⚠️ **Experimental** | **Semantic Blocking.** Content-aware filtering (reading child memory strings). |
 | **Anomaly Scoring** | v0.9 | 🚧 **Planned** | Online integration with DWN Neural Network. |
 
@@ -61,20 +61,20 @@ The project investigates: *Can we build a programmable immune system for Linux p
 ## 🚀 Usage (Quick Start)
 
 ### 1. Compile the Sentinel
-\`\`\`bash
+```bash
 gcc src/main.c -o sentinel
-\`\`\`
+```
 
 ### 2. Run Semantic Defense
-Sentinel will run \`mkdir\`. It will **allow** "safe_folder" but **block** "malware_folder".
+Sentinel will run `mkdir`. It will **allow** "safe_folder" but **block** "malware_folder".
 
-\`\`\`bash
+```bash
 # Test 1: Should Succeed
 ./sentinel mkdir safe_folder
 
 # Test 2: Should be Blocked
 ./sentinel mkdir malware_folder
-\`\`\`
+```
 
 ---
 *Maintained by Nevin Shine.*
