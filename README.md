@@ -1,18 +1,18 @@
 # Sentinel Runtime
 
-![Stable](https://img.shields.io/badge/stable-v0.7-blue?style=flat-square)
-![Experimental](https://img.shields.io/badge/experimental-v0.8-orange?style=flat-square)
-![Focus](https://img.shields.io/badge/focus-linux_kernel_&_ptrace-363636?style=flat-square&logo=linux&logoColor=white)
+![Stable](https://img.shields.io/badge/stable-v0.8-blue?style=flat-square)
+![Experimental](https://img.shields.io/badge/experimental-v0.9-orange?style=flat-square)
+![Focus](https://img.shields.io/badge/focus-ipc_&_neural_link-363636?style=flat-square&logo=linux&logoColor=white)
 
 > **Status:** Active Research
-> **Stable:** v0.7 (Policy Enforcement & TOCTOU Safety)
-> **Experimental:** v0.8 (Semantic Deep Inspection)
+> **Stable:** v0.8 (Deep Introspection & Argument Reading)
+> **Experimental:** v0.9 (IPC Neural Bridge)
 
 ## Abstract
 
 **Sentinel Runtime** is a lightweight Linux runtime security system designed to observe, analyze, and intervene in program behavior at execution time.
 
-Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It can read syscall arguments (like file paths) in real-time and block malicious actions before the kernel executes them.
+Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It connects a high-speed C interception engine to a Python-based Weightless Neural Network (DWN) for real-time decision making.
 
 🔗 **Research Dossier:** [nevinshine.github.io/runtime-security-dossier](https://nevinshine.github.io/runtime-security-dossier/)
 
@@ -23,26 +23,26 @@ Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to
 | Feature | Version | Status | Description |
 | :--- | :--- | :--- | :--- |
 | **Runtime Tracing** | v0.6 | ✅ **Stable** | Reliable interception of syscalls (`ptrace` entry/exit). |
-| **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting (`orig_rax = -1`). TOCTOU-safe. |
-| **Deep Introspection** | v0.8 | ⚠️ **Experimental** | **Semantic Blocking.** Content-aware filtering (reading child memory strings). |
-| **Anomaly Scoring** | v0.9 | 🚧 **Planned** | Online integration with DWN Neural Network. |
+| **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting. TOCTOU-safe. |
+| **Deep Introspection** | v0.8 | ✅ **Stable** | Argument extraction (reading strings via `PTRACE_PEEKDATA`). |
+| **IPC Neural Bridge** | v0.9 | ⚠️ **Experimental** | **The Link.** High-speed Named Pipe (`/tmp/sentinel_ipc`) connecting C to Python. |
 
 ---
 
 ## Architecture
 
-Sentinel is intentionally split into two distinct layers:
+Sentinel operates as a hybrid system:
 
 ### 1. Systems Layer (C / Kernel Space)
-*Located in \`src/\`*
-- **Runtime Monitor:** A custom \`ptrace\`-based tracer.
-- **Deep Introspection:** Uses \`PTRACE_PEEKDATA\` to extract syscall arguments (strings, file paths) from the child's virtual memory.
-- **Active Policy Engine:** Neutralizes malicious requests. *v0.7 stabilized the blocking mechanics; v0.8 adds content awareness.*
+*Located in `src/`*
+- **Runtime Monitor:** A custom `ptrace`-based tracer.
+- **Deep Inspector:** Uses `PTRACE_PEEKDATA` to read memory (filenames, args).
+- **Transmitter (v0.9):** Streams syscall events to the Python Brain via IPC pipes.
 
 ### 2. Analysis Layer (Python / Data Space)
-*Located in \`analysis/\`*
-- **Bridge:** Converts raw syscall streams into fixed-length behavioral vectors.
-- **Brain:** A **Differentiable Weightless Neural Network (DWN)**.
+*Located in `analysis/`*
+- **The Bridge:** A listener that reads raw syscall streams from the C engine.
+- **The Brain:** A **Differentiable Weightless Neural Network (DWN)** that classifies behavior as "Benign" or "Malicious."
 
 ---
 
@@ -50,32 +50,36 @@ Sentinel is intentionally split into two distinct layers:
 
 The project investigates: *Can we build a programmable immune system for Linux processes?*
 
-- [x] **v0.5:** Anomaly Engine (Numbers & sequences).
 - [x] **v0.6:** Deep Runtime Introspection (Argument Extraction).
-- [x] **v0.7:** Policy Enforcement (Stable Blocking & Race Condition Fixes).
-- [~] **v0.8:** Semantic Blocking (Content-Aware Filtering).
-- [ ] **v0.9:** Online Anomaly Scoring.
+- [x] **v0.7:** Policy Enforcement (Stable Blocking).
+- [x] **v0.8:** Semantic Awareness (Reading Filenames).
+- [~] **v0.9:** IPC Bridge (Connecting C Engine to Python Brain).
+- [ ] **v1.0:** Live Neural Defense (Full Integration).
 
 ---
 
-## 🚀 Usage (Quick Start)
+## Usage (Quick Start)
 
-### 1. Compile the Sentinel
+### 1. Start the Brain (Listener)
+The Python bridge must be running first to create the pipe.
+```bash
+python3 analysis/bridge.py
+
+```
+
+### 2. Run the Sentinel (Engine)
+
+In a separate terminal:
+
 ```bash
 gcc src/main.c -o sentinel
+./sentinel mkdir test_folder
+
 ```
 
-### 2. Run Semantic Defense
-Sentinel will run `mkdir`. It will **allow** "safe_folder" but **block** "malware_folder".
-
-```bash
-# Test 1: Should Succeed
-./sentinel mkdir safe_folder
-
-# Test 2: Should be Blocked
-./sentinel mkdir malware_folder
-```
+*Expected Output:* The Brain terminal should receive: `SYSCALL:mkdir:test_folder`
 
 ---
+
 *Maintained by Nevin Shine.*
 
