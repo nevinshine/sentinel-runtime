@@ -1,12 +1,12 @@
 # Sentinel Runtime
 
-![Stable](https://img.shields.io/badge/stable-v0.8-blue?style=flat-square)
-![Experimental](https://img.shields.io/badge/experimental-v0.9-orange?style=flat-square)
-![Focus](https://img.shields.io/badge/focus-ipc_&_neural_link-363636?style=flat-square&logo=linux&logoColor=white)
+![Stable](https://img.shields.io/badge/stable-v0.9-blue?style=flat-square)
+![Alpha](https://img.shields.io/badge/release-v1.0_alpha-orange?style=flat-square)
+![Focus](https://img.shields.io/badge/focus-live_neural_defense-363636?style=flat-square&logo=linux&logoColor=white)
 
 > **Status:** Active Research
-> **Stable:** v0.8 (Deep Introspection & Argument Reading)
-> **Experimental:** v0.9 (IPC Neural Bridge)
+> **Stable:** v0.9 (IPC Neural Bridge)
+> **Current Release:** v1.0-alpha (Live Neural Inference)
 
 ## Abstract
 
@@ -22,27 +22,27 @@ Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to
 
 | Feature | Version | Status | Description |
 | :--- | :--- | :--- | :--- |
-| **Runtime Tracing** | v0.6 | ✅ **Stable** | Reliable interception of syscalls (`ptrace` entry/exit). |
 | **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting. TOCTOU-safe. |
 | **Deep Introspection** | v0.8 | ✅ **Stable** | Argument extraction (reading strings via `PTRACE_PEEKDATA`). |
-| **IPC Neural Bridge** | v0.9 | ⚠️ **Experimental** | **The Link.** High-speed Named Pipe (`/tmp/sentinel_ipc`) connecting C to Python. |
+| **IPC Neural Bridge** | v0.9 | ✅ **Stable** | High-speed Named Pipe (`/tmp/sentinel_ipc`) connecting C to Python. |
+| **Live Neural Defense** | v1.0 | ⚠️ **Alpha** | **The Brain.** Real-time inference using WiSARD (Allow/Block verdicts). |
 
 ---
 
 ## Architecture
 
-Sentinel operates as a hybrid system:
+Sentinel operates as a cybernetic loop:
 
 ### 1. Systems Layer (C / Kernel Space)
 *Located in `src/`*
-- **Runtime Monitor:** A custom `ptrace`-based tracer.
-- **Deep Inspector:** Uses `PTRACE_PEEKDATA` to read memory (filenames, args).
-- **Transmitter (v0.9):** Streams syscall events to the Python Brain via IPC pipes.
+- **Runtime Monitor:** A custom `ptrace` tracer that pauses execution.
+- **Deep Inspector:** Extracts syscall arguments (e.g., filenames) from memory.
+- **Transmitter:** Streams telemetry to the Analysis Layer via IPC.
 
 ### 2. Analysis Layer (Python / Data Space)
 *Located in `analysis/`*
-- **The Bridge:** A listener that reads raw syscall streams from the C engine.
-- **The Brain:** A **Differentiable Weightless Neural Network (DWN)** that classifies behavior as "Benign" or "Malicious."
+- **The Bridge:** A listener that receives the raw syscall stream.
+- **The Brain:** A **WiSARD (Weightless Neural Network)** that receives the signal, checks its memory, and returns a verdict (`BENIGN` or `ANOMALY`) in <1ms.
 
 ---
 
@@ -50,22 +50,23 @@ Sentinel operates as a hybrid system:
 
 The project investigates: *Can we build a programmable immune system for Linux processes?*
 
-- [x] **v0.6:** Deep Runtime Introspection (Argument Extraction).
-- [x] **v0.7:** Policy Enforcement (Stable Blocking).
 - [x] **v0.8:** Semantic Awareness (Reading Filenames).
-- [~] **v0.9:** IPC Bridge (Connecting C Engine to Python Brain).
-- [ ] **v1.0:** Live Neural Defense (Full Integration).
+- [x] **v0.9:** IPC Bridge (Connecting C Engine to Python Brain).
+- [x] **v1.0-alpha:** Live Neural Defense (First successful inference loop).
+- [ ] **v1.1:** Full Feedback Loop (Python triggers the Block in C).
 
 ---
 
 ## Usage (Quick Start)
 
 ### 1. Start the Brain (Listener)
-The Python bridge must be running first to create the pipe.
+The Python bridge must be running first to create the neural link.
 ```bash
 python3 analysis/bridge.py
 
 ```
+
+*Status:* `[BRIDGE] Listening on /tmp/sentinel_ipc...`
 
 ### 2. Run the Sentinel (Engine)
 
@@ -77,7 +78,11 @@ gcc src/main.c -o sentinel
 
 ```
 
-*Expected Output:* The Brain terminal should receive: `SYSCALL:mkdir:test_folder`
+### 3. Observe the Verdict
+
+The Brain terminal will output the real-time decision:
+
+> `🟢 ALLOW | mkdir (test_folder) -> ✅ BENIGN`
 
 ---
 
