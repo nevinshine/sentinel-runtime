@@ -1,43 +1,87 @@
-# analysis/brain.py
-import random
+import os
+import sys
 
-class WiSARD:
+# --- CONFIGURATION ---
+PIPE_REQ = "/tmp/sentinel_req"
+PIPE_RESP = "/tmp/sentinel_resp"
+
+# 🛡️ THE PROTECTED ZONE
+# Any attempt to modify files in this folder will be BLOCKED.
+PROTECTED_PATH = "sentinel_war_room/data"
+
+def init_pipes():
+    if not os.path.exists(PIPE_REQ):
+        os.mkfifo(PIPE_REQ)
+    if not os.path.exists(PIPE_RESP):
+        os.mkfifo(PIPE_RESP)
+
+def analyze_threat(syscall_verb, path):
     """
-    A lightweight Weightless Neural Network for Runtime Security.
-    (Simplified for Real-Time Demonstration)
+    The Core Policy Engine.
+    Returns: True (ALLOW) or False (BLOCK)
     """
-    def __init__(self):
-        self.memory = {} # The "RAM" of the AI
-        self.is_trained = False
+    
+    # 1. Check Context: Is this happening in the Protected Zone?
+    if PROTECTED_PATH in path:
         
-    def encode(self, syscall_name):
-        """
-        Converts a syscall string (e.g., "mkdir") into a bit pattern.
-        In a full version, this uses Thermometer Encoding.
-        Here, we use a simple hash for speed.
-        """
-        # Simple hash to simulate binary features
-        val = sum(bytearray(syscall_name, 'utf-8'))
-        return bin(val)[2:].zfill(16) # 16-bit binary string
-
-    def train(self, syscall_name):
-        """
-        Teach the AI that this syscall is 'Normal'.
-        """
-        pattern = self.encode(syscall_name)
-        self.memory[pattern] = True
-        self.is_trained = True
-        print(f"[BRAIN] 🎓 Learned pattern for: {syscall_name}")
-
-    def predict(self, syscall_name):
-        """
-        Check if we have seen this pattern before.
-        """
-        if not self.is_trained:
-            return "UNCERTAIN (Untrained)"
+        # 2. Check Intent: Is it destructive?
+        # Ransomware relies on 'rename' (to add .enc) or 'unlink' (delete)
+        if syscall_verb in ["rename", "unlink", "rmdir"]:
+            print(f"\n[🧠 BRAIN] 🚨 RANSOMWARE ATTACK DETECTED!")
+            print(f"          Target: {path}")
+            print(f"          Action: {syscall_verb}")
+            print(f"          Verdict: BLOCK ⛔")
+            return False  # BLOCK
             
-        pattern = self.encode(syscall_name)
-        if pattern in self.memory:
-            return "✅ BENIGN"
-        else:
-            return "🚨 ANOMALY"
+    # Default: Allow everything else (Normal OS noise)
+    return True # ALLOW
+
+def main():
+    init_pipes()
+    print(f"[🧠 BRAIN] Neural Engine Online.")
+    print(f"[🧠 BRAIN] Protecting Zone: ~/{PROTECTED_PATH}")
+
+    # Open pipes (Python opens Request as Read, Response as Write)
+    # Note: verify permissions if this hangs
+    fd_req = os.open(PIPE_REQ, os.O_RDONLY)
+    fd_resp = os.open(PIPE_RESP, os.O_WRONLY)
+
+    print("[🧠 BRAIN] Connected to Sentinel Core (C). Waiting for signals...")
+
+    while True:
+        # Read the raw message from C (e.g., "SYSCALL:rename:/home/user/data/file.txt")
+        # We read byte-by-byte or small chunks to handle the stream
+        # For simplicity in this demo, we read a chunk and strip
+        try:
+            raw_data = os.read(fd_req, 512).decode('utf-8').strip()
+        except OSError:
+            break
+            
+        if not raw_data:
+            continue
+
+        # Handle multiple messages coming in fast (split by newline if needed)
+        messages = raw_data.split('\n')
+        
+        for msg in messages:
+            if not msg.startswith("SYSCALL:"):
+                continue
+
+            parts = msg.split(":")
+            if len(parts) < 3:
+                continue
+
+            # Parse: SYSCALL:verb:path
+            verb = parts[1]
+            path = parts[2]
+
+            # --- DECIDE ---
+            is_allowed = analyze_threat(verb, path)
+
+            # --- RESPOND ---
+            # '1' = Allow, '0' = Block
+            response = b'1' if is_allowed else b'0'
+            os.write(fd_resp, response)
+
+if __name__ == "__main__":
+    main()

@@ -1,4 +1,3 @@
-// src/main.c (Patched for mkdirat)
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -14,12 +13,12 @@
 #define PIPE_REQ "/tmp/sentinel_req"
 #define PIPE_RESP "/tmp/sentinel_resp"
 
-// --- Helper to read string from child memory ---
-void read_string(pid_t child, unsigned long addr, char *str, int max_len) {
+// --- Helper to read string from ANY child memory ---
+void read_string(pid_t pid, unsigned long addr, char *str, int max_len) {
     int len = 0;
     unsigned long word;
     while (len < max_len) {
-        word = ptrace(PTRACE_PEEKDATA, child, addr + len, NULL);
+        word = ptrace(PTRACE_PEEKDATA, pid, addr + len, NULL);
         if (errno != 0) break;
         memcpy(str + len, &word, sizeof(word));
         if (memchr(&word, 0, sizeof(word)) != NULL) break;
@@ -41,9 +40,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    pid_t child = fork();
-    if (child == 0) {
+    pid_t original_child = fork();
+    if (original_child == 0) {
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+        raise(SIGSTOP); // Wait for parent to set options
         execvp(argv[2], &argv[2]);
         perror("execvp");
         exit(1);
@@ -53,49 +53,70 @@ int main(int argc, char *argv[]) {
         int fd_req = open(PIPE_REQ, O_WRONLY);
         int fd_resp = open(PIPE_RESP, O_RDONLY);
         
-        // Disable output buffering to ensure logs appear immediately
         setvbuf(stdout, NULL, _IONBF, 0);
+        printf("[SENTINEL v2] 🌲 Process Tree Monitoring Active.\n");
 
-        printf("[SENTINEL] 🔗 Connected. Monitoring strict policies.\n");
+        // 1. Wait for child to stop initially
+        waitpid(original_child, &status, 0);
+
+        // 2. ENABLE FORK TRACING (The Magic Line)
+        ptrace(PTRACE_SETOPTIONS, original_child, 0, 
+               PTRACE_O_TRACEFORK | PTRACE_O_TRACEEXEC | PTRACE_O_EXITKILL);
+
+        // Resume the first child
+        ptrace(PTRACE_SYSCALL, original_child, NULL, NULL);
 
         while (1) {
-            waitpid(child, &status, 0);
-            if (WIFEXITED(status)) break;
+            // 3. WAIT FOR ANY PID (-1)
+            pid_t current_pid = waitpid(-1, &status, __WALL);
+            if (current_pid == -1) break; // No children left
 
-            ptrace(PTRACE_GETREGS, child, NULL, &regs);
-
-            char path[256] = {0};
-            int detected = 0;
-
-            // --- DETECT BOTH SYSCALLS ---
-            if (regs.orig_rax == 83) { 
-                // mkdir(path) -> Path is in RDI
-                read_string(child, regs.rdi, path, 256);
-                detected = 1;
-            } 
-            else if (regs.orig_rax == 258) { 
-                // mkdirat(dirfd, path) -> Path is in RSI
-                read_string(child, regs.rsi, path, 256);
-                detected = 1;
+            if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                if (current_pid == original_child) break; // Main shell died
+                continue; // Some sub-process died, keep going
             }
 
-            if (detected) {
-                // 1. Send to Brain
-                char msg[512];
-                sprintf(msg, "SYSCALL:mkdir:%s\n", path);
-                write(fd_req, msg, strlen(msg));
-                
-                // 2. Wait for Verdict
-                if (!get_verdict(fd_resp)) {
-                    printf("[SENTINEL] 🛡️ BLOCKED: mkdir('%s') is forbidden.\n", path);
-                    regs.orig_rax = -1;
-                    ptrace(PTRACE_SETREGS, child, NULL, &regs);
-                } else {
-                    // Optional: Print allow for debugging
-                    // printf("[SENTINEL] ✅ ALLOWED: mkdir('%s')\n", path);
+            // 4. CHECK FOR EVENTS (New Process Created)
+            if ((status >> 16) == PTRACE_EVENT_FORK) {
+                // A new child was born! Auto-attached.
+                ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
+                continue;
+            }
+
+            // If stopped by a syscall
+            if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
+                ptrace(PTRACE_GETREGS, current_pid, NULL, &regs);
+
+                char path[256] = {0};
+                char *verb = NULL;
+                int detected = 0;
+                unsigned long addr_to_read = 0;
+
+                // --- SYSCALL LOGIC ---
+                if (regs.orig_rax == 83) { verb = "mkdir"; addr_to_read = regs.rdi; detected = 1; } 
+                else if (regs.orig_rax == 258) { verb = "mkdir"; addr_to_read = regs.rsi; detected = 1; }
+                else if (regs.orig_rax == 82) { verb = "rename"; addr_to_read = regs.rdi; detected = 1; }
+                else if (regs.orig_rax == 264 || regs.orig_rax == 316) { 
+                    verb = "rename"; addr_to_read = regs.rsi; detected = 1; 
                 }
+
+                if (detected) {
+                    read_string(current_pid, addr_to_read, path, 256);
+                    char msg[512];
+                    sprintf(msg, "SYSCALL:%s:%s\n", verb, path);
+                    write(fd_req, msg, strlen(msg));
+                    
+                    if (!get_verdict(fd_resp)) {
+                        printf("[SENTINEL] 🛡️ BLOCKED PID %d: %s('%s')\n", current_pid, verb, path);
+                        regs.orig_rax = -1;
+                        ptrace(PTRACE_SETREGS, current_pid, NULL, &regs);
+                    }
+                }
+                // Resume THIS specific PID
+                ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
+            } else {
+                ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
             }
-            ptrace(PTRACE_SYSCALL, child, NULL, NULL);
         }
         close(fd_req); close(fd_resp);
     }

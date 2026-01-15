@@ -1,12 +1,12 @@
 # Sentinel Runtime
 
-![Stable](https://img.shields.io/badge/stable-v1.1-blue?style=flat-square)
-![Beta](https://img.shields.io/badge/release-v1.2_beta-orange?style=flat-square)
-![Focus](https://img.shields.io/badge/focus-active_semantic_defense-363636?style=flat-square&logo=linux&logoColor=white)
+![Stable](https://img.shields.io/badge/stable-v1.2-blue?style=flat-square)
+![Release](https://img.shields.io/badge/release-v2.0_process_tree-orange?style=flat-square)
+![Focus](https://img.shields.io/badge/focus-behavioral_edr_kernel-363636?style=flat-square&logo=linux&logoColor=white)
 
 > **Status:** Active Research
-> **Stable:** v1.1 (Active Neural Blocking)
-> **Current Release:** v1.2-beta (Semantic Platform & Orchestration)
+> **Stable:** v1.2 (Semantic Intelligence)
+> **Current Release:** v2.0 (Dynamic Process Tree Defense)
 
 ## Abstract
 
@@ -26,7 +26,7 @@ Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to
 | **Live Neural Defense** | v1.0 | ✅ **Stable** | Real-time inference loop (<1ms latency). |
 | **Active Blocking** | v1.1 | ✅ **Stable** | **The Kill Switch.** Injecting `ENOSYS` to block syscalls based on AI verdict. |
 | **Semantic Intelligence**| v1.2 | ✅ **Stable** | Context-aware blocking (e.g., allow `mkdir`, block `mkdir malware`). |
-| **Platform Orchestration**| v1.2 | ✅ **Stable** | Unified execution via `sentinel.sh`. |
+| **Process Tree Defense** | v2.0 | ✅ **New** | **Recursive Fork Tracking.** Monitors entire process trees (Shell → Python → Ransomware) via `PTRACE_O_TRACEFORK`. |
 
 ---
 
@@ -36,14 +36,14 @@ Sentinel operates as a closed feedback loop:
 
 ### 1. Systems Layer (C / Kernel Space)
 *Located in `src/`*
-- **Runtime Monitor:** A custom `ptrace` tracer that pauses execution.
-- **The Eye:** Reads memory registers (RDI/RSI) to extract file paths and arguments.
-- **The Enforcer:** Overwrites `ORIG_RAX` with `-1` to neutralize malicious calls.
+- **Runtime Monitor:** A recursive `ptrace` engine that auto-attaches to child processes.
+- **Event Loop:** Handles asynchronous signals (`PTRACE_EVENT_FORK`) to track dynamic execution flows.
+- **The Enforcer:** Overwrites `ORIG_RAX` with `-1` to neutralize malicious calls instantly.
 
 ### 2. Analysis Layer (Python / Data Space)
-*Located in `analysis/`*
-- **The Brain:** A **WiSARD (Weightless Neural Network)** that acts as the policy engine.
-- **Semantic Cortex:** Analyzes string arguments for context (e.g., preventing access to sensitive paths).
+*Located in `src/brain.py`*
+- **The Brain:** A policy engine that receives live signals from the C kernel.
+- **Semantic Cortex:** Analyzes file paths and arguments for context (e.g., blocking `rename` operations in protected zones).
 
 ### 3. Orchestration Layer (Bash)
 *Located in root*
@@ -59,13 +59,15 @@ The project investigates: *Can we build a programmable immune system for Linux p
 - [x] **v1.0:** Live Neural Defense (Inference Loop).
 - [x] **v1.1:** Active Blocking (The "Kill Switch").
 - [x] **v1.2:** Semantic Awareness & Orchestration.
-- [ ] **v2.0:** Sequence Analysis (Sliding Window Behavioral Detection).
+- [x] **v2.0:** Dynamic Process Tree Monitoring (Handling "Grandchild" processes).
+- [ ] **v2.1:** Sequence Analysis (Sliding Window Behavioral Detection).
+- [ ] **v3.0:** Full Memory Introspection (Argument Extraction for Network Sockets).
 
 ---
 
 ## Usage (The Platform)
 
-As of v1.2, you no longer need to manage multiple terminals. The Orchestrator handles everything.
+Sentinel v2.0 can monitor direct binaries or wrapper scripts (like Bash launching Python).
 
 ### 1. Build the Engine
 ```bash
@@ -87,14 +89,14 @@ Syntax: `./sentinel.sh <SYSCALL_KEYWORD> <COMMAND> <ARGS>`
 
 *Result:* `✅ SAFE` (Folder created).
 
-**Example: A Malicious Operation**
+**Example: A Malicious Script (Recursive Monitoring)**
 
 ```bash
-./sentinel.sh mkdir mkdir my_malware_folder
+./sentinel.sh rename ./run_ransomware.sh
 
 ```
 
-*Result:* `🚨 MALICIOUS INTENT` -> **Blocked** (`Function not implemented`).
+*Result:* `🚨 MALICIOUS INTENT` -> **Blocked** (Sentinel tracks Bash → Python → Rename Syscall).
 
 ---
 
