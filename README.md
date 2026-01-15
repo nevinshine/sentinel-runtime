@@ -1,103 +1,104 @@
 # Sentinel Runtime
 
-![Stable](https://img.shields.io/badge/stable-v1.2-blue?style=flat-square)
-![Release](https://img.shields.io/badge/release-v2.0_process_tree-orange?style=flat-square)
-![Focus](https://img.shields.io/badge/focus-behavioral_edr_kernel-363636?style=flat-square&logo=linux&logoColor=white)
+![Milestone](https://img.shields.io/badge/milestone-M1.2_semantic-blue?style=flat-square)
+![Experimental](https://img.shields.io/badge/experimental-M2.0_process_tree-orange?style=flat-square)
+![Focus](https://img.shields.io/badge/focus-systems_security_research-363636?style=flat-square&logo=linux&logoColor=white)
 
-> **Status:** Active Research
-> **Stable:** v1.2 (Semantic Intelligence)
-> **Current Release:** v2.0 (Dynamic Process Tree Defense)
+> **Status:** Research Artifact
+> **Stable Milestone:** M1.2 (Semantic Enforcement)
+> **Current Experimental Milestone:** M2.0 (Process Tree Tracking)
 
 ## Abstract
 
-**Sentinel Runtime** is a lightweight Linux runtime security system designed to observe, analyze, and intervene in program behavior at execution time.
+**Sentinel Runtime** is a Linux runtime defense system designed to investigate syscall-level observability and semantic enforcement.
 
-Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It operates as a cybernetic loop, connecting a high-speed C interception engine to a Python-based Weightless Neural Network (WiSARD) for real-time decision making.
+Unlike traditional signature-based AVs, Sentinel leverages `ptrace` to establish a closed-loop runtime control system. It connects a high-speed C interception kernel to a Python-based Weightless Neural Network (WiSARD) to evaluate process intent against security policies in real-time.
 
 🔗 **Research Dossier:** [nevinshine.github.io/runtime-security-dossier](https://nevinshine.github.io/runtime-security-dossier/)
 
 ---
 
-## Capability Status
+## Capability Milestone Status
 
-| Feature | Version | Status | Description |
+| Feature | Milestone | Status | Description |
 | :--- | :--- | :--- | :--- |
-| **Deep Introspection** | v0.8 | ✅ **Stable** | Argument extraction (reading strings via `PTRACE_PEEKDATA`). |
-| **Live Neural Defense** | v1.0 | ✅ **Stable** | Real-time inference loop (<1ms latency). |
-| **Active Blocking** | v1.1 | ✅ **Stable** | **The Kill Switch.** Injecting `ENOSYS` to block syscalls based on AI verdict. |
-| **Semantic Intelligence**| v1.2 | ✅ **Stable** | Context-aware blocking (e.g., allow `mkdir`, block `mkdir malware`). |
-| **Process Tree Defense** | v2.0 | ✅ **New** | **Recursive Fork Tracking.** Monitors entire process trees (Shell → Python → Ransomware) via `PTRACE_O_TRACEFORK`. |
+| **Deep Introspection** | M0.8 | ✅ **Validated** | Argument extraction via `PTRACE_PEEKDATA`. |
+| **Online Inference Loop** | M1.0 | ✅ **Validated** | Prototype real-time decision pipeline (latency under evaluation). |
+| **Active Blocking** | M1.1 | ✅ **Validated** | **Enforcement Semantics.** Injecting `ENOSYS` to neutralize malicious syscalls. |
+| **Semantic Enforcement**| M1.2 | ✅ **Validated** | Context-aware policy evaluation (e.g., allow `mkdir`, block `mkdir malware`). |
+| **Process Tree Tracking** | M2.0 | 🧪 **Experimental** | **Recursive Fork Monitoring.** Tracing dynamic process trees via `PTRACE_O_TRACEFORK`. |
 
 ---
 
 ## Architecture
 
-Sentinel operates as a closed feedback loop:
+Sentinel operates as a closed-loop runtime control system:
 
 ### 1. Systems Layer (C / Kernel Space)
 *Located in `src/`*
-- **Runtime Monitor:** A recursive `ptrace` engine that auto-attaches to child processes.
-- **Event Loop:** Handles asynchronous signals (`PTRACE_EVENT_FORK`) to track dynamic execution flows.
-- **The Enforcer:** Overwrites `ORIG_RAX` with `-1` to neutralize malicious calls instantly.
+- **Interception Engine:** A recursive `ptrace` monitor that handles `PTRACE_EVENT_FORK` for dynamic coverage.
+- **State Inspection:** Reads CPU registers (RDI/RSI) to reconstruct execution state.
+- **Enforcement Mechanism:** Manipulates `ORIG_RAX` to enforce policy decisions at the kernel boundary.
 
 ### 2. Analysis Layer (Python / Data Space)
 *Located in `src/brain.py`*
-- **The Brain:** A policy engine that receives live signals from the C kernel.
-- **Semantic Cortex:** Analyzes file paths and arguments for context (e.g., blocking `rename` operations in protected zones).
+- **Policy Engine:** A WiSARD-based classifier receiving serialized state signals.
+- **Semantic Cortex:** parsing and evaluating string arguments against defined security invariants.
 
 ### 3. Orchestration Layer (Bash)
 *Located in root*
-- **The Commander:** `sentinel.sh` manages the lifecycle of the Brain and Body, ensuring clean startup and teardown.
+- **Lifecycle Controller:** `sentinel.sh` manages the initialization and teardown of the IPC bridge.
 
 ---
 
-## Roadmap & Research Direction
+## Research Direction
 
-The project investigates: *Can we build a programmable immune system for Linux processes?*
+The project investigates: *Can we enforce semantic security invariants on arbitrary Linux process trees?*
 
-- [x] **v0.9:** IPC Bridge (Connecting C Engine to Python Brain).
-- [x] **v1.0:** Live Neural Defense (Inference Loop).
-- [x] **v1.1:** Active Blocking (The "Kill Switch").
-- [x] **v1.2:** Semantic Awareness & Orchestration.
-- [x] **v2.0:** Dynamic Process Tree Monitoring (Handling "Grandchild" processes).
-- [ ] **v2.1:** Sequence Analysis (Sliding Window Behavioral Detection).
-- [ ] **v3.0:** Full Memory Introspection (Argument Extraction for Network Sockets).
+- [x] **M0.9:** IPC Bridge (C-Python Interop).
+- [x] **M1.0:** Online Inference Loop.
+- [x] **M1.1:** Active Enforcement ("Kill Switch").
+- [x] **M1.2:** Semantic Policy Evaluation.
+- [x] **M2.0:** Dynamic Process Tree Coverage (Grandchild Scope).
+- [ ] **M2.1:** Sequence Analysis (Sliding Window Behavioral Detection).
+- [ ] **M3.0:** Full Memory Introspection (Socket Argument Extraction).
 
 ---
 
-## Usage (The Platform)
+## Usage (Experimental Platform)
 
-Sentinel v2.0 can monitor direct binaries or wrapper scripts (like Bash launching Python).
+Sentinel M2.0 supports monitoring of direct binaries and wrapper scripts.
 
-### 1. Build the Engine
+### 1. Build the Artifact
 ```bash
 gcc src/main.c -o sentinel
 chmod +x sentinel.sh
 
 ```
 
-### 2. Run the Platform
+### 2. Execute Control Loop
 
 Syntax: `./sentinel.sh <SYSCALL_KEYWORD> <COMMAND> <ARGS>`
 
-**Example: A Safe Operation**
+**Experiment A: Safe State**
 
 ```bash
 ./sentinel.sh mkdir mkdir safe_folder
 
 ```
 
-*Result:* `✅ SAFE` (Folder created).
+*Observation:* `✅ SAFE` (Syscall allowed).
 
-**Example: A Malicious Script (Recursive Monitoring)**
+**Experiment B: Malicious State (Recursive)**
 
 ```bash
 ./sentinel.sh rename ./run_ransomware.sh
 
 ```
 
-*Result:* `🚨 MALICIOUS INTENT` -> **Blocked** (Sentinel tracks Bash → Python → Rename Syscall).
+*Observation:* `🚨 POLICY VIOLATION` -> **Blocked** (Sentinel tracks Bash → Python → Rename).
 
 ---
 
-*Maintained by Nevin Shine.*
+*Research Author: Nevin Shine.*
+
