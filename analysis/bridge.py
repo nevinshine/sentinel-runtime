@@ -1,53 +1,43 @@
 # analysis/bridge.py
 import os
 import time
-from brain import WiSARD  # <--- IMPORT THE BRAIN
+from brain import WiSARD
 
-PIPE_PATH = "/tmp/sentinel_ipc"
+PIPE_REQ = "/tmp/sentinel_req"
+PIPE_RESP = "/tmp/sentinel_resp"
 
 def start_listener():
-    # 1. Initialize the AI
     cortex = WiSARD()
-    print("[INIT] Neural Cortex Online.")
-    
-    # 2. Fast Training (The "Base Knowledge")
-    # We teach it that 'mkdir' and 'access' are safe for this demo.
-    print("[INIT] Loading base patterns...")
-    cortex.train("mkdir")
-    cortex.train("access")
-    cortex.train("openat")
-    print("[INIT] ✅ Training Complete.")
+    # Ensure pipes exist
+    if not os.path.exists(PIPE_REQ): os.mkfifo(PIPE_REQ)
+    if not os.path.exists(PIPE_RESP): os.mkfifo(PIPE_RESP)
 
-    if not os.path.exists(PIPE_PATH):
-        os.mkfifo(PIPE_PATH)
-    
-    print(f"[BRIDGE] Listening on {PIPE_PATH}...")
+    print("[BRIDGE] 👁️  Semantic Analysis Online.")
 
-    with open(PIPE_PATH, "r") as pipe:
-        while True:
-            line = pipe.readline()
-            if not line: break
-            
-            # Data Format: "SYSCALL:mkdir:filename"
-            try:
-                parts = line.strip().split(":")
-                if len(parts) >= 2:
-                    call_type = parts[1] # e.g., "mkdir"
-                    arg_val = parts[2] if len(parts) > 2 else ""
-
-                    # 3. ASK THE BRAIN
-                    verdict = cortex.predict(call_type)
-                    
-                    # 4. REPORT
-                    if "ANOMALY" in verdict:
-                        print(f"🔴 BLOCK | {call_type} ({arg_val}) -> {verdict}")
-                    else:
-                        print(f"🟢 ALLOW | {call_type} ({arg_val}) -> {verdict}")
-            except Exception as e:
-                print(f"⚠️ Parse Error: {e}")
+    while True:
+        with open(PIPE_REQ, "r") as req_pipe, open(PIPE_RESP, "w") as resp_pipe:
+            while True:
+                line = req_pipe.readline()
+                if not line: break
+                
+                try:
+                    parts = line.strip().split(":")
+                    if len(parts) >= 3:
+                        syscall = parts[1] # "mkdir"
+                        arg = parts[2]     # "/path/to/folder"
+                        
+                        # --- SEMANTIC POLICY ---
+                        # Rule: "malware" folders are forbidden.
+                        if "malware" in arg:
+                            print(f"🔴 BLOCK | {syscall} ('{arg}') -> 🚨 MALICIOUS INTENT")
+                            resp_pipe.write("0\n") 
+                        else:
+                            print(f"🟢 ALLOW | {syscall} ('{arg}') -> ✅ SAFE")
+                            resp_pipe.write("1\n")
+                            
+                        resp_pipe.flush()
+                except Exception as e:
+                    print(f"⚠️ Error: {e}")
 
 if __name__ == "__main__":
-    try:
-        start_listener()
-    except KeyboardInterrupt:
-        os.unlink(PIPE_PATH)
+    start_listener()

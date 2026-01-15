@@ -1,5 +1,4 @@
-/* src/main.c */
-#define _GNU_SOURCE
+// src/main.c (Patched for mkdirat)
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -9,95 +8,96 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <errno.h>
-#include <fcntl.h>      // <--- NEW: For file control
 
-#define PIPE_PATH "/tmp/sentinel_ipc" // <--- NEW: The Pipe Address
+#define PIPE_REQ "/tmp/sentinel_req"
+#define PIPE_RESP "/tmp/sentinel_resp"
 
-// ... (Keep your read_string and fatal functions exactly the same) ...
-void fatal(const char *msg) {
-    perror(msg);
-    exit(1);
-}
-
-void read_string(pid_t child, unsigned long addr, char *buffer, int max_len) {
-    // ... (Keep this function exactly as it was) ...
-    // (I am hiding it here to save space, but DO NOT DELETE IT from your code)
-    int bytes_read = 0;
+// --- Helper to read string from child memory ---
+void read_string(pid_t child, unsigned long addr, char *str, int max_len) {
+    int len = 0;
     unsigned long word;
-    char *ptr = (char *)&word;
-
-    while (bytes_read < max_len) {
-        word = ptrace(PTRACE_PEEKDATA, child, addr + bytes_read, NULL);
-        if (errno != 0 && bytes_read == 0) { break; }
-        for (int i = 0; i < sizeof(long); i++) {
-            if (bytes_read >= max_len) break;
-            buffer[bytes_read] = ptr[i];
-            if (buffer[bytes_read] == '\0') { return; }
-            bytes_read++;
-        }
+    while (len < max_len) {
+        word = ptrace(PTRACE_PEEKDATA, child, addr + len, NULL);
+        if (errno != 0) break;
+        memcpy(str + len, &word, sizeof(word));
+        if (memchr(&word, 0, sizeof(word)) != NULL) break;
+        len += sizeof(word);
     }
-    buffer[max_len - 1] = '\0';
+    str[max_len - 1] = '\0';
 }
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <program>\n", argv[0]);
-        return 1;
-    }
+int get_verdict(int fd_read) {
+    char buf[2];
+    int n = read(fd_read, buf, 1);
+    if (n > 0 && buf[0] == '0') return 0; // Block
+    return 1; // Allow
+}
 
-    // --- NEW: Open the Pipe ---
-    printf("[SENTINEL] Connecting to Brain at %s...\n", PIPE_PATH);
-    FILE *pipe_fp = fopen(PIPE_PATH, "w"); // Open for Writing
-    if (pipe_fp == NULL) {
-        perror("Failed to open pipe (Is the Python bridge running?)");
+int main(int argc, char *argv[]) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <syscall_name> <program> [args...]\n", argv[0]);
         return 1;
     }
-    // ---------------------------
 
     pid_t child = fork();
     if (child == 0) {
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-        raise(SIGSTOP);
-        execvp(argv[1], &argv[1]);
-        fatal("execvp failed");
+        execvp(argv[2], &argv[2]);
+        perror("execvp");
+        exit(1);
     } else {
         int status;
         struct user_regs_struct regs;
-        char filename[256];
+        int fd_req = open(PIPE_REQ, O_WRONLY);
+        int fd_resp = open(PIPE_RESP, O_RDONLY);
+        
+        // Disable output buffering to ensure logs appear immediately
+        setvbuf(stdout, NULL, _IONBF, 0);
 
-        waitpid(child, &status, 0);
-        ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_EXITKILL);
-        
-        // --- NEW: Signal Connection Success ---
-        printf("[SENTINEL] Connected! Monitoring PID: %d\n", child);
-        
-        while(1) {
-            ptrace(PTRACE_SYSCALL, child, NULL, NULL);
+        printf("[SENTINEL] 🔗 Connected. Monitoring strict policies.\n");
+
+        while (1) {
             waitpid(child, &status, 0);
             if (WIFEXITED(status)) break;
 
             ptrace(PTRACE_GETREGS, child, NULL, &regs);
 
-            if ((long)regs.rax == -38 && regs.orig_rax == 83) { // mkdir entry
-                read_string(child, regs.rdi, filename, sizeof(filename));
+            char path[256] = {0};
+            int detected = 0;
 
-                // --- NEW: TRANSMIT TO PYTHON ---
-                // Format: "SYSCALL:mkdir:filename"
-                fprintf(pipe_fp, "SYSCALL:mkdir:%s\n", filename);
-                fflush(pipe_fp); // FORCE the data out immediately
-                // -------------------------------
+            // --- DETECT BOTH SYSCALLS ---
+            if (regs.orig_rax == 83) { 
+                // mkdir(path) -> Path is in RDI
+                read_string(child, regs.rdi, path, 256);
+                detected = 1;
+            } 
+            else if (regs.orig_rax == 258) { 
+                // mkdirat(dirfd, path) -> Path is in RSI
+                read_string(child, regs.rsi, path, 256);
+                detected = 1;
+            }
 
-                printf("[SENTINEL] Sent to Brain: %s\n", filename);
-
-                // (Keep the blocking logic for now as a fallback)
-                if (strstr(filename, "malware") != NULL) {
+            if (detected) {
+                // 1. Send to Brain
+                char msg[512];
+                sprintf(msg, "SYSCALL:mkdir:%s\n", path);
+                write(fd_req, msg, strlen(msg));
+                
+                // 2. Wait for Verdict
+                if (!get_verdict(fd_resp)) {
+                    printf("[SENTINEL] 🛡️ BLOCKED: mkdir('%s') is forbidden.\n", path);
                     regs.orig_rax = -1;
                     ptrace(PTRACE_SETREGS, child, NULL, &regs);
+                } else {
+                    // Optional: Print allow for debugging
+                    // printf("[SENTINEL] ✅ ALLOWED: mkdir('%s')\n", path);
                 }
-            } 
+            }
+            ptrace(PTRACE_SYSCALL, child, NULL, NULL);
         }
-        fclose(pipe_fp); // Close the pipe when done
+        close(fd_req); close(fd_resp);
     }
     return 0;
 }
