@@ -1,18 +1,18 @@
 # Sentinel Runtime
 
-![Stable](https://img.shields.io/badge/stable-v0.9-blue?style=flat-square)
-![Alpha](https://img.shields.io/badge/release-v1.0_alpha-orange?style=flat-square)
-![Focus](https://img.shields.io/badge/focus-live_neural_defense-363636?style=flat-square&logo=linux&logoColor=white)
+![Stable](https://img.shields.io/badge/stable-v1.1-blue?style=flat-square)
+![Beta](https://img.shields.io/badge/release-v1.2_beta-orange?style=flat-square)
+![Focus](https://img.shields.io/badge/focus-active_semantic_defense-363636?style=flat-square&logo=linux&logoColor=white)
 
 > **Status:** Active Research
-> **Stable:** v0.9 (IPC Neural Bridge)
-> **Current Release:** v1.0-alpha (Live Neural Inference)
+> **Stable:** v1.1 (Active Neural Blocking)
+> **Current Release:** v1.2-beta (Semantic Platform & Orchestration)
 
 ## Abstract
 
 **Sentinel Runtime** is a lightweight Linux runtime security system designed to observe, analyze, and intervene in program behavior at execution time.
 
-Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It connects a high-speed C interception engine to a Python-based Weightless Neural Network (DWN) for real-time decision making.
+Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to establish a semantic understanding of process intent. It operates as a cybernetic loop, connecting a high-speed C interception engine to a Python-based Weightless Neural Network (WiSARD) for real-time decision making.
 
 🔗 **Research Dossier:** [nevinshine.github.io/runtime-security-dossier](https://nevinshine.github.io/runtime-security-dossier/)
 
@@ -22,27 +22,32 @@ Unlike traditional AVs, Sentinel intercepts Linux system calls using `ptrace` to
 
 | Feature | Version | Status | Description |
 | :--- | :--- | :--- | :--- |
-| **Policy Enforcement** | v0.7 | ✅ **Stable** | Active blocking via register rewriting. TOCTOU-safe. |
 | **Deep Introspection** | v0.8 | ✅ **Stable** | Argument extraction (reading strings via `PTRACE_PEEKDATA`). |
-| **IPC Neural Bridge** | v0.9 | ✅ **Stable** | High-speed Named Pipe (`/tmp/sentinel_ipc`) connecting C to Python. |
-| **Live Neural Defense** | v1.0 | ⚠️ **Alpha** | **The Brain.** Real-time inference using WiSARD (Allow/Block verdicts). |
+| **Live Neural Defense** | v1.0 | ✅ **Stable** | Real-time inference loop (<1ms latency). |
+| **Active Blocking** | v1.1 | ✅ **Stable** | **The Kill Switch.** Injecting `ENOSYS` to block syscalls based on AI verdict. |
+| **Semantic Intelligence**| v1.2 | ✅ **Stable** | Context-aware blocking (e.g., allow `mkdir`, block `mkdir malware`). |
+| **Platform Orchestration**| v1.2 | ✅ **Stable** | Unified execution via `sentinel.sh`. |
 
 ---
 
 ## Architecture
 
-Sentinel operates as a cybernetic loop:
+Sentinel operates as a closed feedback loop:
 
 ### 1. Systems Layer (C / Kernel Space)
 *Located in `src/`*
 - **Runtime Monitor:** A custom `ptrace` tracer that pauses execution.
-- **Deep Inspector:** Extracts syscall arguments (e.g., filenames) from memory.
-- **Transmitter:** Streams telemetry to the Analysis Layer via IPC.
+- **The Eye:** Reads memory registers (RDI/RSI) to extract file paths and arguments.
+- **The Enforcer:** Overwrites `ORIG_RAX` with `-1` to neutralize malicious calls.
 
 ### 2. Analysis Layer (Python / Data Space)
 *Located in `analysis/`*
-- **The Bridge:** A listener that receives the raw syscall stream.
-- **The Brain:** A **WiSARD (Weightless Neural Network)** that receives the signal, checks its memory, and returns a verdict (`BENIGN` or `ANOMALY`) in <1ms.
+- **The Brain:** A **WiSARD (Weightless Neural Network)** that acts as the policy engine.
+- **Semantic Cortex:** Analyzes string arguments for context (e.g., preventing access to sensitive paths).
+
+### 3. Orchestration Layer (Bash)
+*Located in root*
+- **The Commander:** `sentinel.sh` manages the lifecycle of the Brain and Body, ensuring clean startup and teardown.
 
 ---
 
@@ -50,41 +55,47 @@ Sentinel operates as a cybernetic loop:
 
 The project investigates: *Can we build a programmable immune system for Linux processes?*
 
-- [x] **v0.8:** Semantic Awareness (Reading Filenames).
 - [x] **v0.9:** IPC Bridge (Connecting C Engine to Python Brain).
-- [x] **v1.0-alpha:** Live Neural Defense (First successful inference loop).
-- [ ] **v1.1:** Full Feedback Loop (Python triggers the Block in C).
+- [x] **v1.0:** Live Neural Defense (Inference Loop).
+- [x] **v1.1:** Active Blocking (The "Kill Switch").
+- [x] **v1.2:** Semantic Awareness & Orchestration.
+- [ ] **v2.0:** Sequence Analysis (Sliding Window Behavioral Detection).
 
 ---
 
-## Usage (Quick Start)
+## Usage (The Platform)
 
-### 1. Start the Brain (Listener)
-The Python bridge must be running first to create the neural link.
-```bash
-python3 analysis/bridge.py
+As of v1.2, you no longer need to manage multiple terminals. The Orchestrator handles everything.
 
-```
-
-*Status:* `[BRIDGE] Listening on /tmp/sentinel_ipc...`
-
-### 2. Run the Sentinel (Engine)
-
-In a separate terminal:
-
+### 1. Build the Engine
 ```bash
 gcc src/main.c -o sentinel
-./sentinel mkdir test_folder
+chmod +x sentinel.sh
 
 ```
 
-### 3. Observe the Verdict
+### 2. Run the Platform
 
-The Brain terminal will output the real-time decision:
+Syntax: `./sentinel.sh <SYSCALL_KEYWORD> <COMMAND> <ARGS>`
 
-> `🟢 ALLOW | mkdir (test_folder) -> ✅ BENIGN`
+**Example: A Safe Operation**
+
+```bash
+./sentinel.sh mkdir mkdir safe_folder
+
+```
+
+*Result:* `✅ SAFE` (Folder created).
+
+**Example: A Malicious Operation**
+
+```bash
+./sentinel.sh mkdir mkdir my_malware_folder
+
+```
+
+*Result:* `🚨 MALICIOUS INTENT` -> **Blocked** (`Function not implemented`).
 
 ---
 
 *Maintained by Nevin Shine.*
-

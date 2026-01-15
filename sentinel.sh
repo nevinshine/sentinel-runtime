@@ -16,21 +16,21 @@ cleanup() {
         kill "$BRAIN_PID" 2>/dev/null
     fi
     rm -f "$PIPE_REQ" "$PIPE_RESP"
-    echo "[ORCHESTRATOR] 🧹 Cleanup complete."
+    echo "[ORCHESTRATOR] Cleanup complete."
     exit
 }
 
 # Trap Ctrl+C (SIGINT) to ensure cleanup
 trap cleanup SIGINT SIGTERM
 
-echo "[ORCHESTRATOR] 🚀 Initializing Sentinel Platform..."
+echo "[ORCHESTRATOR] Initializing Sentinel Platform..."
 
 # 1. Clear old artifacts
 rm -f "$PIPE_REQ" "$PIPE_RESP"
 
 # 2. Start the Brain (Hidden)
 # We redirect logs to a file so they don't clutter the screen
-echo "[ORCHESTRATOR] 🧠 Booting WiSARD Engine..."
+echo "[ORCHESTRATOR] Booting WiSARD Engine..."
 python3 analysis/bridge.py > "$BRAIN_LOG" 2>&1 &
 BRAIN_PID=$!
 
@@ -45,8 +45,8 @@ while [[ ! -p "$PIPE_REQ" || ! -p "$PIPE_RESP" ]]; do
     fi
 done
 
-echo "[ORCHESTRATOR] 🔗 Neural Link Established (PID: $BRAIN_PID)."
-echo "[ORCHESTRATOR] 🛡️  Engaging Kinetic Defense..."
+echo "[ORCHESTRATOR] Neural Link Established (PID: $BRAIN_PID)."
+echo "[ORCHESTRATOR] Engaging Kinetic Defense..."
 echo "---------------------------------------------------"
 
 # 4. Run the C Engine (Foreground)
