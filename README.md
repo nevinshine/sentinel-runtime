@@ -25,7 +25,7 @@ Demonstration of **Sentinel Runtime** operating in "X-Ray Mode." It actively tra
 **Scenario:** A user attempts to delete a protected file (`unlink` syscall).
 **Result:** Sentinel intercepts the syscall, consults the Policy Engine, and injects a block verdict (`EPERM`) before the kernel executes the deletion.
 
-*(Place your new GIF here showing the 'rm' block)*
+![Sentinel M2.1 Demo](assets/sentinel_demo.gif)
 
 ---
 
@@ -33,12 +33,32 @@ Demonstration of **Sentinel Runtime** operating in "X-Ray Mode." It actively tra
 
 | Feature | Milestone | Status | Description |
 | :--- | :--- | :--- | :--- |
-| **Deep Introspection** | M0.8 | ✅ **Validated** | Argument extraction via `PTRACE_PEEKDATA`. |
-| **Online Inference Loop** | M1.0 | ✅ **Validated** | Real-time decision pipeline via Named Pipes (IPC). |
-| **Recursive Process Tracking** | M2.0 | ✅ **Validated** | Tracing dynamic trees via `PTRACE_O_TRACEFORK`. |
-| **Universal Extraction** | M2.1 | ✅ **Operational** | **The Universal Eye.** Map-based extraction for `unlink`, `openat`, `execve`. |
-| **Stealth Tracking** | M2.1 | ✅ **Operational** | **VFORK Support.** Detecting optimized shell spawns (`dash`/`sh`). |
-| **Semantic Bucketing** | M3.0 | 🚧 **In Progress** | Converting raw paths into semantic concepts (e.g., "Ransomware Activity"). |
+| **Deep Introspection** | M0.8 | [COMPLETE] | Argument extraction via `PTRACE_PEEKDATA`. |
+| **Online Inference Loop** | M1.0 | [COMPLETE] | Real-time decision pipeline via Named Pipes (IPC). |
+| **Recursive Process Tracking** | M2.0 | [COMPLETE] | Tracing dynamic trees via `PTRACE_O_TRACEFORK`. |
+| **Universal Extraction** | M2.1 | [OPERATIONAL] | **The Universal Eye.** Map-based extraction for `unlink`, `openat`, `execve`. |
+| **Stealth Tracking** | M2.1 | [OPERATIONAL] | **VFORK Support.** Detecting optimized shell spawns (`dash`/`sh`). |
+| **Semantic Bucketing** | M3.0 | [IN PROGRESS] | Converting raw paths into semantic concepts (e.g., "Ransomware Activity"). |
+
+---
+
+## Research Roadmap
+
+* **M0.5: The Interceptor (Completed)**
+    * Basic `ptrace` attachment and syscall logging (`mkdir` only).
+* **M1.0: The Closed Loop (Completed)**
+    * Connected C Engine to Python Brain via IPC Pipes.
+    * Established the ALLOW/BLOCK decision protocol.
+* **M2.0: Recursive Vision (Completed)**
+    * Implemented `PTRACE_O_TRACEFORK` to track process trees (Parent -> Child).
+    * Visualized the process hierarchy in logs.
+* **M2.1: Universal Defense (CURRENT)**
+    * **Universal Map:** Added signatures for `unlink`, `rmdir`, `openat`, `execve`.
+    * **Stealth Tracking:** Added `PTRACE_O_TRACEVFORK` to detect optimized shells (`dash`, `sh`).
+    * **Active Blocking:** Validated "Kill Switch" for file deletion attempts.
+* **M3.0: Semantic Understanding (Next)**
+    * **Bucketing:** Convert raw paths (`/etc/passwd`) into concepts (`SENSITIVE_FILE`).
+    * **State Machine:** Detect multi-step attacks (e.g., "Open" -> "Read" -> "Socket Write" = Exfiltration).
 
 ---
 
@@ -80,9 +100,12 @@ You must run the Analysis Engine (Brain) and the Kernel Interceptor (Sentinel) s
 
 **Terminal 1 (The Brain):**
 
-```bash
-python3 src/analysis/brain.py
-# Displays: [INFO] Neural Engine Online.
+```diff
+$ python3 src/analysis/brain.py
++ [INFO] Neural Engine Online.
++ [INFO] Sentinel Link Established.
++ [LOG]  Action: execve | Path: /bin/sh
+- [ALERT] BLOCKED THREAT: unlink -> protected.txt
 
 ```
 
@@ -94,12 +117,12 @@ sudo ./bin/sentinel test /bin/sh
 
 # Inside the monitored session:
 # touch protected.txt
-# rm protected.txt  <-- BLOCKED
+# rm protected.txt
+rm: cannot remove 'protected.txt': Operation not permitted
 
 ```
 
 ---
 
 *Research Author: Nevin Shine.*
-
 
