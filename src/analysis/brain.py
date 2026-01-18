@@ -2,86 +2,90 @@ import os
 import sys
 
 # --- CONFIGURATION ---
-PIPE_REQ = "/tmp/sentinel_req"
-PIPE_RESP = "/tmp/sentinel_resp"
+REQ_PIPE = "/tmp/sentinel_req"
+RESP_PIPE = "/tmp/sentinel_resp"
 
-# 🛡️ THE PROTECTED ZONE
-# Any attempt to modify files in this folder will be BLOCKED.
-PROTECTED_PATH = "sentinel_war_room/data"
+# ANSI Colors for Professional Logging
+COLOR_RED = "\033[1;31m"
+COLOR_GREEN = "\033[1;32m"
+COLOR_RESET = "\033[0m"
+
+# Policy Configuration
+# Set to "" to protect everything, or a specific path like "/secret_data"
+PROTECTED_PATH = "" 
 
 def init_pipes():
-    if not os.path.exists(PIPE_REQ):
-        os.mkfifo(PIPE_REQ)
-    if not os.path.exists(PIPE_RESP):
-        os.mkfifo(PIPE_RESP)
+    if not os.path.exists(REQ_PIPE):
+        os.mkfifo(REQ_PIPE)
+    if not os.path.exists(RESP_PIPE):
+        os.mkfifo(RESP_PIPE)
 
 def analyze_threat(syscall_verb, path):
     """
     The Core Policy Engine.
     Returns: True (ALLOW) or False (BLOCK)
     """
-    
-    # 1. Check Context: Is this happening in the Protected Zone?
-    if PROTECTED_PATH in path:
+    # 1. Scope Check
+    if PROTECTED_PATH not in path:
+        return True
+
+    # 2. Intent Check: Is it destructive?
+    # We block 'unlink' (file del), 'rmdir' (dir del), and 'rename' (ransomware)
+    if syscall_verb in ["unlink", "rmdir", "rename"]:
+        return False # BLOCK
         
-        # 2. Check Intent: Is it destructive?
-        # Ransomware relies on 'rename' (to add .enc) or 'unlink' (delete)
-        if syscall_verb in ["rename", "unlink", "rmdir"]:
-            print(f"\n[🧠 BRAIN] 🚨 RANSOMWARE ATTACK DETECTED!")
-            print(f"          Target: {path}")
-            print(f"          Action: {syscall_verb}")
-            print(f"          Verdict: BLOCK ⛔")
-            return False  # BLOCK
-            
-    # Default: Allow everything else (Normal OS noise)
     return True # ALLOW
 
 def main():
+    print(f"[INFO] Neural Engine Online.")
     init_pipes()
-    print(f"[🧠 BRAIN] Neural Engine Online.")
-    print(f"[🧠 BRAIN] Protecting Zone: ~/{PROTECTED_PATH}")
 
-    # Open pipes (Python opens Request as Read, Response as Write)
-    # Note: verify permissions if this hangs
-    fd_req = os.open(PIPE_REQ, os.O_RDONLY)
-    fd_resp = os.open(PIPE_RESP, os.O_WRONLY)
+    # Open pipes: Read Request first, then Write Response
+    print("[INFO] Connecting to Request Channel...")
+    f_req = open(REQ_PIPE, "r")
+    
+    print("[INFO] Connecting to Response Channel...")
+    f_resp = open(RESP_PIPE, "w")
 
-    print("[🧠 BRAIN] Connected to Sentinel Core (C). Waiting for signals...")
+    print("[INFO] Sentinel Link Established. Monitoring...")
 
     while True:
-        # Read the raw message from C (e.g., "SYSCALL:rename:/home/user/data/file.txt")
-        # We read byte-by-byte or small chunks to handle the stream
-        # For simplicity in this demo, we read a chunk and strip
         try:
-            raw_data = os.read(fd_req, 512).decode('utf-8').strip()
-        except OSError:
-            break
+            # Read line-by-line (Stable Protocol)
+            raw_data = f_req.readline()
+            if not raw_data: break # EOF
             
-        if not raw_data:
-            continue
-
-        # Handle multiple messages coming in fast (split by newline if needed)
-        messages = raw_data.split('\n')
-        
-        for msg in messages:
-            if not msg.startswith("SYSCALL:"):
-                continue
-
-            parts = msg.split(":")
-            if len(parts) < 3:
-                continue
-
-            # Parse: SYSCALL:verb:path
+            cmd = raw_data.strip()
+            
+            # Parse Protocol: SYSCALL:verb:path
+            parts = cmd.split(":")
+            if len(parts) < 3: continue
+            
             verb = parts[1]
             path = parts[2]
 
-            # --- DECIDE ---
-            is_allowed = analyze_threat(verb, path)
+            # DECIDE
+            if analyze_threat(verb, path):
+                # ALLOW
+                f_resp.write("1")
+                f_resp.flush()
+                print(f"[LOG]   Action: {verb} | Path: {path}")
+            else:
+                # BLOCK
+                f_resp.write("0")
+                f_resp.flush()
+                print(f"{COLOR_RED}[ALERT] BLOCKED THREAT: {verb} -> {path}{COLOR_RESET}")
 
-            # --- RESPOND ---
-            # '1' = Allow, '0' = Block
-            response = b'1' if is_allowed else b'0'
-            os.write(fd_resp, response)
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"[ERROR] {e}")
+            break
+
+    # Cleanup
+    f_req.close()
+    f_resp.close()
+    print("\n[INFO] Session Terminated.")
 
 if __name__ == "__main__":
     main()

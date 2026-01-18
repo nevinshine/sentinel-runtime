@@ -1,3 +1,8 @@
+/*
+ * sentinel-runtime: src/engine/main.c
+ * RELEASE: Milestone 2.1 (Universal Eyes + VFORK Support)
+ */
+
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -9,17 +14,26 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include "logger.h" 
+#include "logger.h"
+#include "syscall_map.h"
 
 #define PIPE_REQ "/tmp/sentinel_req"
 #define PIPE_RESP "/tmp/sentinel_resp"
-#define MAX_PIDS 4194304 // Covers modern Linux /proc/sys/kernel/pid_max
+#define MAX_PIDS 4194304 
 #define COLOR_RED     "\033[1;31m"
 #define COLOR_RESET   "\033[0m"
 
-// Global depth map for process tree context
 int pid_depths[MAX_PIDS] = {0}; 
 
+// Helper: Lookup Syscall
+const syscall_sig_t *get_syscall_sig(long sys_num) {
+    for (int i = 0; WATCHLIST[i].sys_num != -1; i++) {
+        if (WATCHLIST[i].sys_num == sys_num) return &WATCHLIST[i];
+    }
+    return NULL;
+}
+
+// Helper: Read String
 void read_string(pid_t pid, unsigned long addr, char *str, int max_len) {
     int len = 0;
     unsigned long word;
@@ -59,22 +73,17 @@ int main(int argc, char *argv[]) {
         struct user_regs_struct regs;
         
         int fd_req = open(PIPE_REQ, O_WRONLY);
-        if (fd_req < 0) { 
-            fprintf(stderr, "Error: Start the Python analyzer first! (Pipe not found)\n"); 
-            return 1; 
-        }
+        if (fd_req < 0) { fprintf(stderr, "Sentinel IPC Error: Pipe not found.\n"); return 1; }
         int fd_resp = open(PIPE_RESP, O_RDONLY);
-        
-        setvbuf(stdout, NULL, _IONBF, 0);
         
         // 1. Attach to Root
         waitpid(original_child, &status, 0);
         pid_depths[original_child] = 0;
-        log_tree_event(original_child, getpid(), 0, "INIT", NULL);
+        log_tree_event(original_child, getpid(), 0, "INIT", "Sentinel Attached");
 
-        // 2. Set Options (The Core of M2.0)
+        // 2. Set Options (INCLUDES VFORK FIX)
         ptrace(PTRACE_SETOPTIONS, original_child, 0, 
-               PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC | PTRACE_O_EXITKILL);
+               PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC | PTRACE_O_EXITKILL | PTRACE_O_TRACEVFORK);
 
         ptrace(PTRACE_SYSCALL, original_child, NULL, NULL);
 
@@ -87,52 +96,53 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            // 3. Handle Process Spawning (Recursive Tracking)
-            if ((status >> 16) == PTRACE_EVENT_FORK || (status >> 16) == PTRACE_EVENT_CLONE) {
+            // 3. Recursive Tracking (Fork/Clone/Vfork)
+            int event = status >> 16;
+            if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_CLONE || event == PTRACE_EVENT_VFORK) {
                 unsigned long new_pid_l;
                 ptrace(PTRACE_GETEVENTMSG, current_pid, 0, &new_pid_l);
                 pid_t new_pid = (pid_t)new_pid_l;
                 
-                // Inherit depth + 1
                 pid_depths[new_pid] = pid_depths[current_pid] + 1;
                 
-                log_tree_event(new_pid, current_pid, pid_depths[new_pid], "SPAWNED", "Fork Detected");
+                // Use the visual logger again
+                log_tree_event(new_pid, current_pid, pid_depths[new_pid], "SPAWNED", "New Child Process");
+                
                 ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
                 continue;
             }
 
-            // 4. Handle Syscalls
+            // 4. Syscall Interception
             if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
                 ptrace(PTRACE_GETREGS, current_pid, NULL, &regs);
-                char path[256] = {0};
-                char *verb = NULL;
-                int detected = 0;
-                unsigned long addr_to_read = 0;
+                
+                const syscall_sig_t *sig = get_syscall_sig(regs.orig_rax);
 
-                // Simple Syscall Map (To be upgraded in Phase 6)
-                if (regs.orig_rax == 83) { verb = "mkdir"; addr_to_read = regs.rdi; detected = 1; } 
-                else if (regs.orig_rax == 258) { verb = "mkdir"; addr_to_read = regs.rsi; detected = 1; }
-                else if (regs.orig_rax == 82) { verb = "rename"; addr_to_read = regs.rdi; detected = 1; }
-                else if (regs.orig_rax == 264 || regs.orig_rax == 316) { 
-                    verb = "rename"; addr_to_read = regs.rsi; detected = 1; 
-                }
+                if (sig) {
+                    char arg_val[256] = {0};
+                    unsigned long arg_addr = 0;
 
-                if (detected) {
-                    read_string(current_pid, addr_to_read, path, 256);
+                    if (sig->arg_reg_idx == 0) arg_addr = regs.rdi;
+                    else if (sig->arg_reg_idx == 1) arg_addr = regs.rsi;
+                    else if (sig->arg_reg_idx == 2) arg_addr = regs.rdx;
+
+                    if (sig->type == ARG_STRING && arg_addr != 0) {
+                        read_string(current_pid, arg_addr, arg_val, 256);
+                    }
+
+                    // Send to Brain
                     char msg[512];
-                    sprintf(msg, "SYSCALL:%s:%s\n", verb, path);
+                    snprintf(msg, sizeof(msg), "SYSCALL:%s:%s\n", sig->name, arg_val);
                     
-                    // FIXED: Handle write error to silence compiler warning
-                    if (write(fd_req, msg, strlen(msg)) == -1) {
-                        // If pipe is broken, just continue (or handle fatal error)
+                    if (write(fd_req, msg, strlen(msg)) != -1) {
+                        if (!get_verdict(fd_resp)) {
+                            // Blocked!
+                            printf("       " COLOR_RED "[BLOCKED]" COLOR_RESET " PID: %d | Action: %s | Target: %s\n", current_pid, sig->name, arg_val);
+                            regs.orig_rax = -1;
+                            ptrace(PTRACE_SETREGS, current_pid, NULL, &regs);
+                        }
                     }
-                    
-                    if (!get_verdict(fd_resp)) {
-                        printf("      " COLOR_RED "[BLOCKED]" COLOR_RESET " PID: %d | Action: %s | Target: %s\n", current_pid, verb, path);
-                        regs.orig_rax = -1; // Invalidate syscall
-                        ptrace(PTRACE_SETREGS, current_pid, NULL, &regs);
-                    }
-                }
+                } 
                 ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
             } else {
                 ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);

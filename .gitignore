@@ -2,3 +2,8 @@ sentinel_v0.6
 launcher
 *.o
 *.csv
+bin/
+*.o
+*.log
+__pycache__/
+.vscode/

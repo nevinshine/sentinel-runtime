@@ -1,11 +1,11 @@
 # Sentinel Runtime
 
-![Milestone](https://img.shields.io/badge/milestone-M2.0_Recursive_Tracking-blue?style=flat-square&logo=linux)
+![Milestone](https://img.shields.io/badge/milestone-M2.1_Universal_Defense-blue?style=flat-square&logo=linux)
 ![Architecture](https://img.shields.io/badge/architecture-research_modular-orange?style=flat-square)
 ![Focus](https://img.shields.io/badge/focus-systems_security_research-363636?style=flat-square)
 
 > **Status:** Research Artifact (Active)
-> **Current Capability:** M2.0 (Recursive Process Tree Tracking)
+> **Current Capability:** M2.1 (Universal Syscall Extraction & VFORK Tracking)
 > **Target:** CISPA / Saarland MSc Application
 
 ## Abstract
@@ -18,17 +18,14 @@ Unlike traditional signature-based AVs, Sentinel leverages `ptrace` to establish
 
 ---
 
-## ⚡ M2.0: Recursive Process Tracking (Live Demo)
+## M2.1: Universal Active Defense (Live Demo)
 
-Demonstration of **Sentinel Runtime** intercepting a multi-stage fork evasion attempt. 
-The engine tracks the process tree across generations (`Parent` -> `Dropper` -> `Payload`) using `PTRACE_O_TRACEFORK` logic to eliminate the "Grandchild Blind Spot."
+Demonstration of **Sentinel Runtime** operating in "X-Ray Mode." It actively tracks modern shell behavior (`vfork`) and enforces a **Block-on-Intent** policy.
 
-![Sentinel M2.0 Demo](assets/sentinel_demo.gif)
+**Scenario:** A user attempts to delete a protected file (`unlink` syscall).
+**Result:** Sentinel intercepts the syscall, consults the Policy Engine, and injects a block verdict (`EPERM`) before the kernel executes the deletion.
 
-**Trace Log Analysis:**
-* **PID 67840 (Yellow):** Level 1 Dropper detected.
-* **PID 67841 (Magenta):** Level 2 Grandchild intercepted recursively.
-* **Verdict:** Syscall `mkdir("RANSOMWARE_ROOT")` blocked in real-time.
+*(Place your new GIF here showing the 'rm' block)*
 
 ---
 
@@ -38,41 +35,42 @@ The engine tracks the process tree across generations (`Parent` -> `Dropper` -> 
 | :--- | :--- | :--- | :--- |
 | **Deep Introspection** | M0.8 | ✅ **Validated** | Argument extraction via `PTRACE_PEEKDATA`. |
 | **Online Inference Loop** | M1.0 | ✅ **Validated** | Real-time decision pipeline via Named Pipes (IPC). |
-| **Active Blocking** | M1.1 | ✅ **Validated** | **Enforcement Semantics.** Injecting `ENOSYS` to neutralize malicious syscalls. |
-| **Process Tree Tracking** | M2.0 | ✅ **Operational** | **Recursive Fork Monitoring.** Tracing dynamic trees via `PTRACE_O_TRACEFORK`. |
-| **Semantic Extraction** | M3.0 | 🚧 **In Progress** | Universal argument mapping for `connect`, `unlink`, `execve`. |
+| **Recursive Process Tracking** | M2.0 | ✅ **Validated** | Tracing dynamic trees via `PTRACE_O_TRACEFORK`. |
+| **Universal Extraction** | M2.1 | ✅ **Operational** | **The Universal Eye.** Map-based extraction for `unlink`, `openat`, `execve`. |
+| **Stealth Tracking** | M2.1 | ✅ **Operational** | **VFORK Support.** Detecting optimized shell spawns (`dash`/`sh`). |
+| **Semantic Bucketing** | M3.0 | 🚧 **In Progress** | Converting raw paths into semantic concepts (e.g., "Ransomware Activity"). |
 
 ---
 
-## Architecture (Refactored M2.0)
+## Architecture (Refactored M2.1)
 
 Sentinel operates as a modular closed-loop runtime control system:
 
 ### 1. Systems Layer (C / Kernel Space)
 *Located in `src/engine/`*
-- **Interception Engine (`main.c`):** A recursive `ptrace` monitor that handles `PTRACE_EVENT_FORK` / `CLONE`.
-- **Visualization (`logger.c`):** Real-time tree hierarchy rendering for research logging.
-- **Enforcement:** Manipulates `ORIG_RAX` to enforce policy decisions at the kernel boundary.
+- **Interception Engine (`main.c`):** A recursive `ptrace` monitor supporting `FORK`, `CLONE`, and `VFORK`.
+- **Universal Map (`syscall_map.h`):** A research artifact defining the "DNA" of syscalls (Registers, Types, Names).
+- **Visualization (`logger.c`):** Real-time tree hierarchy rendering.
 
 ### 2. Analysis Layer (Python / Data Space)
 *Located in `src/analysis/`*
-- **Policy Engine:** Receives serialized state signals (`SYSCALL:mkdir:args`).
-- **Verdict Issuer:** Returns binary Block/Allow decisions to the kernel.
+- **Neural Engine (`brain.py`):** The decision center. Parses `SYSCALL:verb:arg` signals and issues Block/Allow verdicts.
+- **Mock Brain (`mock_brain.py`):** Lightweight testing tool for engine validation.
 
 ### 3. Test Vectors
-*Located in `tests/evasion/`*
-- **Recursive Fork Bomb:** Simulates "dropper" malware behavior to stress-test the recursive tracking.
+*Located in `tests/`*
+- **Adversarial Scenarios:** Standard Linux utilities (`rm`, `ls`) are used to test real-world evasion resilience.
 
 ---
 
 ## Usage
 
-Sentinel M2.0 uses a standard `make` build system.
+Sentinel M2.1 uses a standard `make` build system.
 
 ### 1. Build the Artifact
 ```bash
-make
-# Compiles ./bin/sentinel and ./bin/recursive_fork
+make clean && make
+# Compiles ./bin/sentinel
 
 ```
 
@@ -83,7 +81,8 @@ You must run the Analysis Engine (Brain) and the Kernel Interceptor (Sentinel) s
 **Terminal 1 (The Brain):**
 
 ```bash
-python3 src/analysis/mock_brain.py
+python3 src/analysis/brain.py
+# Displays: [INFO] Neural Engine Online.
 
 ```
 
@@ -91,10 +90,16 @@ python3 src/analysis/mock_brain.py
 
 ```bash
 # Syntax: ./bin/sentinel <trigger_word> <target_binary>
-./bin/sentinel run ./bin/recursive_fork
+sudo ./bin/sentinel test /bin/sh
+
+# Inside the monitored session:
+# touch protected.txt
+# rm protected.txt  <-- BLOCKED
 
 ```
 
 ---
 
 *Research Author: Nevin Shine.*
+
+
