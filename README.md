@@ -14,7 +14,7 @@
 
 Unlike traditional signature-based AVs, Sentinel leverages `ptrace` to establish a closed-loop runtime control system. It connects a high-speed C interception kernel to a Python-based **Cognitive Engine (WiSARD)** to evaluate process intent against behavioral policies in real-time.
 
-🔗 **Research Dossier:** [nevinshine.github.io/runtime-security-dossier](https://nevinshine.github.io/runtime-security-dossier/)
+**System Security Research Dossier:** [nevinshine.github.io/system-security-research-dossier](https://nevinshine.github.io/runtime-security-dossier/)
 
 ---
 
