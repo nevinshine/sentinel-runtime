@@ -7,6 +7,8 @@
 > **Status:** Research Artifact (Active)
 > **Current Capability:** M3.0 (Semantic Understanding & Behavioral Policy)
 > **Target:** CISPA / Saarland MSc Application
+> 
+> 📊 **[Read the Project Evaluation](PROJECT_EVALUATION.md)** - A comprehensive technical assessment of this research artifact's achievements, innovations, and impact for aspiring system security research engineers.
 
 ## Abstract
 
