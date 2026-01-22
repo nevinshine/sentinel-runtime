@@ -1,7 +1,11 @@
+# src/analysis/brain.py
+# RELEASE:  Milestone 3.1 (Exfiltration State Machine)
+
 import os
 import sys
 import time
-from semantic import SemanticMapper  # Import the new M3 module
+from semantic import SemanticMapper
+from state_machine import ExfiltrationDetector  # NEW: Import state machine
 
 # --- CONFIGURATION ---
 REQ_PIPE = "/tmp/sentinel_req"
@@ -12,6 +16,7 @@ COLOR_RED     = "\033[1;31m"
 COLOR_GREEN   = "\033[1;32m"
 COLOR_YELLOW  = "\033[1;33m"
 COLOR_CYAN    = "\033[1;36m"
+COLOR_GRAY    = "\033[90m"
 COLOR_RESET   = "\033[0m"
 
 def init_pipes():
@@ -20,13 +25,57 @@ def init_pipes():
     if not os.path.exists(RESP_PIPE):
         os.mkfifo(RESP_PIPE)
 
+def parse_message(raw_data:  str) -> dict:
+    """
+    Parse the enhanced message format from the C engine.
+    Format: SYSCALL: <verb>:<path_or_fd>: pid=<pid>:fd=<fd>:ret=<ret>
+    """
+    result = {
+        "verb": "",
+        "path": "",
+        "pid": 0,
+        "fd": -1,
+        "ret": -1
+    }
+
+    parts = raw_data.strip().split(":")
+    if len(parts) < 3:
+        return None
+
+    # First parts are always:  SYSCALL, verb, path/fd
+    result["verb"] = parts[1]
+    result["path"] = parts[2]. strip()
+
+    # Parse key=value pairs from remaining parts
+    for part in parts[3:]:
+        part = part.strip()
+        if "=" in part:
+            key, val = part.split("=", 1)
+            key = key.strip()
+            val = val.strip()
+            if key == "pid":
+                result["pid"] = int(val) if val. lstrip('-').isdigit() else 0
+            elif key == "fd":
+                result["fd"] = int(val) if val.lstrip('-').isdigit() else -1
+            elif key == "ret":
+                result["ret"] = int(val) if val.lstrip('-').isdigit() else -1
+
+    return result
+
 def main():
     os.system("clear")
-    print(f"{COLOR_GREEN}+ [INFO] Neural Engine Online (M3.0 Cognitive Mode).{COLOR_RESET}")
+    print(f"{COLOR_GREEN}╔══════════════════════════════════════════════════════════════╗{COLOR_RESET}")
+    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.1 - Exfiltration Detection Mode   ║{COLOR_RESET}")
+    print(f"{COLOR_GREEN}╚══════════════════════════════════════════════════════════════╝{COLOR_RESET}")
+    print()
 
     # Initialize the Knowledge Base
     mapper = SemanticMapper()
     print(f"{COLOR_GREEN}+ [INFO] Semantic Knowledge Base Loaded.{COLOR_RESET}")
+
+    # NEW: Initialize the State Machine
+    detector = ExfiltrationDetector()
+    print(f"{COLOR_GREEN}+ [INFO] Exfiltration State Machine Armed.{COLOR_RESET}")
 
     init_pipes()
 
@@ -34,63 +83,118 @@ def main():
     f_req = open(REQ_PIPE, "r")
     f_resp = open(RESP_PIPE, "w")
     print(f"{COLOR_GREEN}+ [INFO] Sentinel Link Established.{COLOR_RESET}")
-    print("-" * 75)
-    print(f"{'VERDICT':<10} | {'ACTION':<10} | {'SEMANTIC TAG':<20} | {'PATH'}")
-    print("-" * 75)
+    print()
+    print("-" * 95)
+    print(f"{'VERDICT':<10} | {'PID':<8} | {'ACTION':<10} | {'STATE':<22} | {'TAG':<18} | {'TARGET'}")
+    print("-" * 95)
 
+    # Destructive verbs (existing M3.0 logic)
     destructive_verbs = ["unlink", "unlinkat", "rmdir", "rename"]
+
+    # Sensitive tags for blocking
+    sensitive_tags = ["SENSITIVE_USER_FILE", "CRITICAL_AUTH", "SSH_PRIVATE_KEY", "ROOT_SENSITIVE"]
 
     while True:
         try:
             raw_data = f_req.readline()
-            if not raw_data: break
+            if not raw_data:
+                break
 
-            cmd = raw_data.strip()
-            parts = cmd.split(":")
-            if len(parts) < 3: continue
+            # Parse the enhanced message format
+            msg = parse_message(raw_data)
+            if msg is None:
+                continue
 
-            verb = parts[1]
-            path = parts[2]
+            verb = msg["verb"]
+            path = msg["path"]
+            pid = msg["pid"]
+            fd = msg["fd"]
+            ret = msg["ret"]
 
-            # --- PHASE M3: SEMANTIC ANALYSIS ---
-            # 1. Classify the raw path into a Concept
-            concept = mapper.classify(path)
+            # --- PHASE M3.0: SEMANTIC ANALYSIS ---
+            # Classify the path (only meaningful for file operations)
+            concept = "N/A"
+            if verb in ["open", "openat", "unlink", "unlinkat", "rmdir", "rename", "mkdir", "execve"]:
+                concept = mapper.classify(path)
 
-            # 2. DECISION LOGIC (Behavioral Policy)
-            # Rule: Block destructive actions on SENSITIVE or CRITICAL tags
+            # --- PHASE M3.1: STATE MACHINE ANALYSIS ---
+            # Build args dict for state machine
+            args = {
+                "fd": str(fd),
+                "ret": str(ret)
+            }
+
+            # Process through state machine
+            state_verdict = detector.process_event(
+                pid=pid,
+                syscall=verb,
+                args=args,
+                semantic_tag=concept
+            )
+
+            # Get current state for logging
+            ctx = detector._get_context(pid)
+            current_state = ctx.state. name
+
+            # --- DECISION LOGIC ---
             blocked = False
+            block_reason = ""
 
-            if verb in destructive_verbs:
-                if concept in ["SENSITIVE_USER_FILE", "CRITICAL_AUTH", "SSH_PRIVATE_KEY", "ROOT_SENSITIVE"]:
-                    blocked = True
+            # Priority 1: State Machine BLOCK (Exfiltration detected!)
+            if state_verdict == "BLOCK":
+                blocked = True
+                block_reason = "EXFILTRATION"
 
-            # 3. EXECUTE & LOG
+            # Priority 2: Destructive actions on sensitive files (existing M3.0 logic)
+            elif verb in destructive_verbs and concept in sensitive_tags:
+                blocked = True
+                block_reason = "DESTRUCTIVE"
+
+            # --- EXECUTE & LOG ---
             if blocked:
                 # Send BLOCK ('0')
                 f_resp.write("0")
                 f_resp.flush()
-                print(f"{COLOR_RED}{'BLOCK':<10} | {verb:<10} | {concept:<20} | {path}{COLOR_RESET}")
+
+                # Red alert for blocks
+                print(f"{COLOR_RED}{'BLOCK':<10} | {pid:<8} | {verb:<10} | {current_state:<22} | {concept:<18} | {path}{COLOR_RESET}")
+
+                # Extra alert for exfiltration
+                if block_reason == "EXFILTRATION":
+                    print(f"{COLOR_RED}  └── ⚠️  EXFILTRATION ATTEMPT BLOCKED!  Sensitive data was about to leave via network.{COLOR_RESET}")
+
             else:
                 # Send ALLOW ('1')
                 f_resp.write("1")
                 f_resp.flush()
 
-                # Dim the logs for "Noise" concepts to reduce clutter
+                # Color coding based on state/verdict
                 color = COLOR_RESET
-                if concept in ["SHARED_LIBRARY", "PROC_FS", "DEVICE_TTY"]:
-                    color = "\033[90m" # Gray for noise
 
-                print(f"{color}{'ALLOW':<10} | {verb:<10} | {concept:<20} | {path}{COLOR_RESET}")
+                if state_verdict. startswith("MONITOR"):
+                    color = COLOR_YELLOW  # Yellow for monitored (suspicious but allowed)
+                elif concept in ["SHARED_LIBRARY", "PROC_FS", "DEVICE_TTY", "DEVICE_NULL", "TEMP_FILE"]:
+                    color = COLOR_GRAY    # Gray for noise
+                elif concept in sensitive_tags:
+                    color = COLOR_CYAN    # Cyan for sensitive file access (not blocked)
+
+                # Truncate long paths for display
+                display_path = path if len(path) <= 40 else path[:37] + "..."
+
+                print(f"{color}{'ALLOW':<10} | {pid:<8} | {verb:<10} | {current_state:<22} | {concept: <18} | {display_path}{COLOR_RESET}")
 
         except KeyboardInterrupt:
-            print(f"\n{COLOR_YELLOW}+ [INFO] Shutting down...{COLOR_RESET}")
+            print(f"\n{COLOR_YELLOW}+ [INFO] Shutting down Neural Engine...{COLOR_RESET}")
             break
         except Exception as e:
             print(f"{COLOR_RED}[ERROR] {e}{COLOR_RESET}")
+            import traceback
+            traceback.print_exc()
             break
 
     f_req.close()
     f_resp.close()
+    print(f"{COLOR_GREEN}+ [INFO] Sentinel Neural Engine Offline.{COLOR_RESET}")
 
 if __name__ == "__main__":
     main()
