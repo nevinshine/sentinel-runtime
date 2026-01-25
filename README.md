@@ -16,7 +16,7 @@
 
 Unlike traditional signature-based AVs, Sentinel leverages `ptrace` to establish a closed-loop runtime control system. It connects a high-speed C interception kernel to a Python-based **Cognitive Engine** that classifies behavior in real-time. The system now includes **cross-process taint tracking** to detect data exfiltration attacks.
 
-**System Security Research Dossier:** [nevinshine.github.io/system-security-research-dossier](https://nevinshine.github.io/runtime-security-dossier/)
+**System Security Research Dossier:** [nevinshine.github.io/system-security-research-dossier](https://nevinshine.github.io/system-security-research-dossier/)
 
 ---
 
