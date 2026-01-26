@@ -1,9 +1,9 @@
 # Sentinel Runtime: Host-Based Active Defense
 
-> **Status:** Research Artifact (Active)
-> **Current Capability:** M3.4 (Persistence + MITRE Mapping + Canonicalization)
-> **Target:** CISPA / Saarland MSc Application
-> 📊 **[Read the MITRE Mapping](https://www.google.com/search?q=docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
+> *  **Status:** Research Artifact (Active)
+> * **Current Capability:** M3.4 (Persistence + MITRE Mapping + Canonicalization)
+> * **Target:** CISPA / Saarland MSc Application
+> * **[Read the MITRE Mapping](https://www.google.com/search?q=docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
 
 ## Abstract
 
