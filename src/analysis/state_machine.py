@@ -1,5 +1,5 @@
 # src/analysis/state_machine.py
-# RELEASE:  M3.1.3 - Production Ready with Pipeline Timeout
+# RELEASE:  M3.2.0 - Production Ready (Dup Support + Pipeline Timeout)
 
 import time
 from enum import Enum, auto
@@ -22,9 +22,9 @@ SENSITIVE_TAGS = {
 @dataclass
 class ProcessContext:
     pid: int
-    state: ThreatState = ThreatState. IDLE
+    state: ThreatState = ThreatState.IDLE
     has_read_sensitive: bool = False
-    has_socket:  bool = False
+    has_socket: bool = False
     last_activity: float = 0.0
 
     def __post_init__(self):
@@ -36,32 +36,25 @@ class ExfiltrationDetector:
     Heuristic State Machine for detecting data exfiltration.
     Uses Taint Analysis to track sensitive data across process boundaries (pipes).
 
-    Detection Pattern:
-      1. Process opens sensitive file (CRITICAL_AUTH, etc.)
-      2. Process reads from that file (data now in memory)
-      3. Process writes to network socket → BLOCK (same-process exfil)
-
-      OR (cross-process via pipe):
-
-      1. Process A opens sensitive file, reads it
-      2. Process A writes to stdout (pipe) → Pipeline becomes "tainted"
-      3. Process B reads from stdin (receives tainted data)
-      4. Process B writes to network socket → BLOCK (pipe-based exfil)
+    Updated M3.2: Handles FD duplication (dup/dup2) to prevent evasion.
     """
 
     PROCESS_TIMEOUT_SECONDS = 30.0  # Reset individual process state after inactivity
     PIPELINE_TIMEOUT_SECONDS = 5.0  # Reset global pipeline taint (pipes are fast)
-    PIPE_FDS = {0, 1, 2}  # stdin, stdout, stderr
 
     def __init__(self):
         self.processes: Dict[int, ProcessContext] = {}
+
+        # Standard pipe FDs (stdin, stdout, stderr)
+        # We make this an instance set so we can dynamically add duped FDs
+        self.PIPE_FDS = {0, 1, 2}
 
         # Cross-process taint tracking
         self.sensitive_data_in_pipeline = False
         self.pipeline_taint_time = 0.0
         self.tainted_pids: Set[int] = set()
 
-    def _get_context(self, pid:  int) -> ProcessContext:
+    def _get_context(self, pid: int) -> ProcessContext:
         if pid not in self.processes:
             self.processes[pid] = ProcessContext(pid=pid)
         return self.processes[pid]
@@ -70,10 +63,10 @@ class ExfiltrationDetector:
         ctx = self._get_context(pid)
         now = time.time()
 
-        # === HOUSEKEEPING:  Timeout Resets ===
+        # === HOUSEKEEPING: Timeout Resets ===
 
         # Reset individual process state after inactivity
-        if now - ctx.last_activity > self. PROCESS_TIMEOUT_SECONDS:
+        if now - ctx.last_activity > self.PROCESS_TIMEOUT_SECONDS:
             self._reset_state(ctx)
         ctx.last_activity = now
 
@@ -88,48 +81,60 @@ class ExfiltrationDetector:
         if syscall in ["open", "openat"]:
             if semantic_tag in SENSITIVE_TAGS:
                 ctx.state = ThreatState.SENSITIVE_FILE_OPENED
-                return f"MONITOR:  Opened sensitive file ({semantic_tag})"
+                return f"MONITOR: Opened sensitive file ({semantic_tag})"
 
         # STAGE 2: READ
         elif syscall == "read":
-            fd = int(args. get("fd", -1))
+            fd = int(args.get("fd", -1))
 
             # If we previously opened a sensitive file, this read loads the data
             if ctx.state == ThreatState.SENSITIVE_FILE_OPENED:
-                ctx.state = ThreatState. SENSITIVE_DATA_HELD
+                ctx.state = ThreatState.SENSITIVE_DATA_HELD
                 ctx.has_read_sensitive = True
-                return "MONITOR:  Sensitive data loaded into memory"
+                return "MONITOR: Sensitive data loaded into memory"
 
-            # Cross-process:  reading from stdin while pipeline is tainted
+            # Cross-process: reading from stdin while pipeline is tainted
             if fd == 0 and self.sensitive_data_in_pipeline:
-                ctx. state = ThreatState. SENSITIVE_DATA_HELD
+                ctx.state = ThreatState.SENSITIVE_DATA_HELD
                 ctx.has_read_sensitive = True
                 self.tainted_pids.add(pid)
                 return "MONITOR: Received tainted data via pipe"
 
-        # STAGE 3: SOCKET CREATION
+        # STAGE 3: RESOURCE DUPLICATION (EVASION PROTECTION)
+        elif syscall in ["dup", "dup2", "dup3"]:
+            old_fd = int(args.get("fd", -1))
+            new_fd = int(args.get("ret", -1)) # Success return value is the new FD
+
+            # If the old FD was a pipe, the new one acts as a pipe too.
+            # This catches: dup2(stdout, 99) -> write(99, data)
+            if new_fd >= 0 and old_fd in self.PIPE_FDS:
+                self.PIPE_FDS.add(new_fd)
+                return f"MONITOR: FD {old_fd} duplicated to {new_fd} - Tracking alias"
+
+        # STAGE 4: SOCKET CREATION
         elif syscall == "socket":
             ctx.has_socket = True
             return "MONITOR: Socket created"
 
-        # STAGE 4: SOCKET CONNECT
+        # STAGE 5: SOCKET CONNECT
         elif syscall == "connect":
             ctx.has_socket = True
             return "MONITOR: Socket connected"
 
-        # STAGE 5: WRITE - THE CRITICAL DECISION POINT
+        # STAGE 6: WRITE - THE CRITICAL DECISION POINT
         elif syscall in ["write", "sendto", "sendmsg"]:
             fd = int(args.get("fd", -1))
 
             # Case A: Writing sensitive data to stdout/pipe (cross-process setup)
-            if fd in self. PIPE_FDS and ctx. has_read_sensitive:
+            if fd in self.PIPE_FDS and ctx.has_read_sensitive:
                 self.sensitive_data_in_pipeline = True
                 self.pipeline_taint_time = now
                 return "MONITOR: ⚠️ Sensitive data written to pipe - tracking downstream"
 
             # Case B: Direct exfiltration (same process has sensitive data + socket)
+            # Note: We assume writing to a NON-PIPE FD implies network/file exfil intent
             if fd not in self.PIPE_FDS and ctx.has_read_sensitive and ctx.has_socket:
-                ctx.state = ThreatState. EXFILTRATION_ATTEMPT
+                ctx.state = ThreatState.EXFILTRATION_ATTEMPT
                 return "BLOCK"
 
             # Case C: Cross-process exfiltration (writing to socket while pipeline hot)
@@ -141,8 +146,11 @@ class ExfiltrationDetector:
                     self.tainted_pids.clear()
                     return "BLOCK"
 
-        # STAGE 6: CLOSE (no state change needed)
+        # STAGE 7: CLOSE
         elif syscall == "close":
+            fd = int(args.get("fd", -1))
+            # Optional: Remove FD from set if we want to be strict,
+            # but keeping it is safer for FDs reused by shells.
             pass
 
         return "ALLOW"

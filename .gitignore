@@ -7,3 +7,9 @@ bin/
 *.log
 __pycache__/
 .vscode/
+id_rsa
+game_save.dat
+protected_work.txt
+project_notes.txt
+sentinel_service.log
+brain.log
