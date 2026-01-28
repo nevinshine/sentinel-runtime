@@ -1,9 +1,9 @@
 # Sentinel Runtime: Host-Based Active Defense
 
-> *  **Status:** Research Artifact (Active)
+> * **Status:** Research Artifact (Active)
 > * **Current Capability:** M3.4 (Persistence + MITRE Mapping + Canonicalization)
 > * **Target:** CISPA / Saarland MSc Application
-> * **[Read the MITRE Mapping](https://www.google.com/search?q=docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
+> * **[Read the MITRE Mapping](docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
 
 ## Abstract
 
@@ -13,11 +13,22 @@
 
 ## Research Proof (Video Artifacts)
 
-These recordings provide immutable proof of the system's defensive capabilities:
+These recordings provide immutable proof of the system's defensive capabilities.
 
-* **`sentinel_demo.cast`**: Active blocking of Ransomware-style file destruction (`unlink`).
-* **`sentinel_evasion.cast`**: Detection of sophisticated exfiltration using **Symlink Aliasing** and **FD Duplication**.
-* **`sentinel_persistence.cast`**: Demonstration of the **M3.4 Watchdog** resurrecting the security stack after a `SIGKILL` attack.
+### 1. Ransomware Blocking (M3.0)
+*Active blocking of Ransomware-style file destruction (`unlink`).*
+
+![Ransomware Blocking](assets/sentinel_demo.gif)
+
+### 2. Evasion Detection (M3.3 - Symlink & FD Duplication)
+*Detection of sophisticated exfiltration using **Symlink Aliasing** and **FD Duplication**.*
+
+![Evasion Demo](assets/sentinel_evasion.gif)
+
+### 3. Watchdog Persistence (M3.4 - Self-Healing)
+*Demonstration of the **Watchdog Orchestrator** resurrecting the security stack after a `SIGKILL` attack.*
+
+![Persistence Demo](assets/sentinel_persistence.gif)
 
 ---
 
@@ -49,7 +60,6 @@ These recordings provide immutable proof of the system's defensive capabilities:
 
 ```bash
 make clean && make
-
 ```
 
 ### 2. Start Persistent Guardian
@@ -57,8 +67,7 @@ make clean && make
 To run Sentinel in a self-healing "Service Mode" that resists termination:
 
 ```bash
-./bin/watchdog.sh
-
+./scripts/watchdog.sh
 ```
 
 ### 3. Verify Evasion Block
@@ -66,7 +75,6 @@ To run Sentinel in a self-healing "Service Mode" that resists termination:
 ```bash
 # In a separate terminal
 sudo ./bin/sentinel test ./bin/dup_test
-
 ```
 
 ---

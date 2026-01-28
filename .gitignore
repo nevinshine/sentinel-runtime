@@ -13,3 +13,25 @@ protected_work.txt
 project_notes.txt
 sentinel_service.log
 brain.log
+# --- Sentinel Runtime Artifacts ---
+# Runtime Logs
+*.log
+*.cast
+
+# Test/Demo Artifacts
+id_rsa
+game_save.dat
+protected.txt
+protected_work.txt
+project_notes.txt
+RANSOMWARE_ROOT/
+final_check.txt
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Binaries (handled by make, but good to ignore)
+bin/sentinel
+bin/dup_test
+bin/recursive_fork

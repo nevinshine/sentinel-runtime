@@ -17,5 +17,13 @@ build:
 	$(CC) -o bin/recursive_fork $(TEST_SRC_1)
 	$(CC) -o bin/dup_test $(TEST_SRC_2)
 
+
+
+# Add to your Makefile
+all: sentinel dup_test
+
+dup_test: tests/evasion/dup_test.c
+	gcc -o bin/dup_test tests/evasion/dup_test.c
+
 clean:
 	@rm -rf bin/*
