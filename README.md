@@ -87,4 +87,6 @@ sudo ./bin/sentinel test ./bin/dup_test
 | **M3.3** | Hardening | Path Canonicalization implemented. |
 | **M3.4** | Persistence | Watchdog Orchestrator & MITRE Mapping finalized. |
 
+---
+
 *Research Author: Nevin Shine, Systems Security Research Engineer.*
