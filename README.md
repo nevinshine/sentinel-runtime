@@ -89,4 +89,4 @@ sudo ./bin/sentinel test ./bin/dup_test
 
 ---
 
-*Research Author: Nevin Shine, Systems Security Research Engineer.*
+*Research Author: Nevin Shine, Undergraduate Systems Security Researcher.*
