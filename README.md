@@ -55,6 +55,8 @@ These recordings provide immutable proof of the system's defensive capabilities.
 
 *Demonstration of the **Watchdog Orchestrator** resurrecting the security stack after a `SIGKILL` attack (Self-Healing).*
 
+ ![Persistence Demo](assets/sentinel_persistence.gif)
+
 ---
 
 ## [ 0x03 ] CAPABILITY MILESTONES
@@ -129,3 +131,5 @@ sudo ./bin/sentinel test ./bin/dup_test
 <div align="center">
 <sub>Research Author: Nevin Shine, Undergraduate Systems Security Researcher.</sub>
 </div>
+
+
