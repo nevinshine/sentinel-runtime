@@ -3,8 +3,8 @@ import os
 import time
 from brain import WiSARD
 
-PIPE_REQ = "/tmp/sentinel_req"
-PIPE_RESP = "/tmp/sentinel_resp"
+PIPE_REQ = os.environ.get("SENTINEL_PIPE_REQ", "/tmp/sentinel_req")
+PIPE_RESP = os.environ.get("SENTINEL_PIPE_RESP", "/tmp/sentinel_resp")
 
 def start_listener():
     cortex = WiSARD()

@@ -4,12 +4,13 @@
 import os
 import sys
 import time
+import select
 from semantic import SemanticMapper
 from state_machine import ExfiltrationDetector  # NEW: Import state machine
 
 # --- CONFIGURATION ---
-REQ_PIPE = "/tmp/sentinel_req"
-RESP_PIPE = "/tmp/sentinel_resp"
+REQ_PIPE = os.environ.get("SENTINEL_PIPE_REQ", "/tmp/sentinel_req")
+RESP_PIPE = os.environ.get("SENTINEL_PIPE_RESP", "/tmp/sentinel_resp")
 
 # ANSI Colors for Professional Logging
 COLOR_RED     = "\033[1;31m"
@@ -27,45 +28,50 @@ def init_pipes():
 
 def parse_message(raw_data:  str) -> dict:
     """
-    Parse the enhanced message format from the C engine.
-    Format: SYSCALL: <verb>:<path_or_fd>: pid=<pid>:fd=<fd>:ret=<ret>
+    Parse the IPC message from the C engine. Now expects JSON for robust parsing.
+    Falls back to legacy colon-split if JSON fails (for backward compatibility).
     """
-    result = {
-        "verb": "",
-        "path": "",
-        "pid": 0,
-        "fd": -1,
-        "ret": -1
-    }
-
-    parts = raw_data.strip().split(":")
-    if len(parts) < 3:
-        return None
-
-    # First parts are always:  SYSCALL, verb, path/fd
-    result["verb"] = parts[1]
-    result["path"] = parts[2]. strip()
-
-    # Parse key=value pairs from remaining parts
-    for part in parts[3:]:
-        part = part.strip()
-        if "=" in part:
-            key, val = part.split("=", 1)
-            key = key.strip()
-            val = val.strip()
-            if key == "pid":
-                result["pid"] = int(val) if val. lstrip('-').isdigit() else 0
-            elif key == "fd":
-                result["fd"] = int(val) if val.lstrip('-').isdigit() else -1
-            elif key == "ret":
-                result["ret"] = int(val) if val.lstrip('-').isdigit() else -1
-
-    return result
+    import json
+    try:
+        # Try JSON first
+        msg = json.loads(raw_data)
+        # Ensure required fields exist
+        for k in ("verb", "path", "pid", "fd", "ret"):
+            if k not in msg:
+                msg[k] = "" if k in ("verb", "path") else -1
+        return msg
+    except Exception:
+        # Legacy fallback: colon-split
+        result = {
+            "verb": "",
+            "path": "",
+            "pid": 0,
+            "fd": -1,
+            "ret": -1
+        }
+        parts = raw_data.strip().split(":")
+        if len(parts) < 3:
+            return None
+        result["verb"] = parts[1]
+        result["path"] = parts[2].strip()
+        for part in parts[3:]:
+            part = part.strip()
+            if "=" in part:
+                key, val = part.split("=", 1)
+                key = key.strip()
+                val = val.strip()
+                if key == "pid":
+                    result["pid"] = int(val) if val.lstrip('-').isdigit() else 0
+                elif key == "fd":
+                    result["fd"] = int(val) if val.lstrip('-').isdigit() else -1
+                elif key == "ret":
+                    result["ret"] = int(val) if val.lstrip('-').isdigit() else -1
+        return result
 
 def main():
     os.system("clear")
     print(f"{COLOR_GREEN}╔══════════════════════════════════════════════════════════════╗{COLOR_RESET}")
-    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.1 - Exfiltration Detection Mode   ║{COLOR_RESET}")
+    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.3 - Exfiltration Detection Mode   ║{COLOR_RESET}")
     print(f"{COLOR_GREEN}╚══════════════════════════════════════════════════════════════╝{COLOR_RESET}")
     print()
 
@@ -96,6 +102,11 @@ def main():
 
     while True:
         try:
+            # Use select to avoid blocking forever
+            rlist, _, _ = select.select([f_req], [], [], 1.0)
+            if not rlist:
+                continue  # No data yet, loop back
+
             raw_data = f_req.readline()
             if not raw_data:
                 break

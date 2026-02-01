@@ -2,8 +2,8 @@ import os
 import sys
 
 # IPC Configuration
-REQ_PIPE = "/tmp/sentinel_req"
-RESP_PIPE = "/tmp/sentinel_resp"
+REQ_PIPE = os.environ.get("SENTINEL_PIPE_REQ", "/tmp/sentinel_req")
+RESP_PIPE = os.environ.get("SENTINEL_PIPE_RESP", "/tmp/sentinel_resp")
 
 def ensure_pipes():
     if not os.path.exists(REQ_PIPE):

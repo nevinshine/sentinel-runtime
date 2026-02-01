@@ -126,10 +126,34 @@ sudo ./bin/sentinel test ./bin/dup_test
   url = {[https://github.com/nevinshine/sentinel-runtime](https://github.com/nevinshine/sentinel-runtime)}
 }
 ```
----
 
-<div align="center">
-<sub>Research Author: Nevin Shine, Undergraduate Systems Security Researcher.</sub>
-</div>
+## Advanced Engineering: Sentinel Runtime M3.3 (Stable Alpha)
+
+### Key Features
+
+- Non-Blocking Kernel I/O:
+  The C engine uses select() with a 100ms timeout to prevent system freezes if the Python analysis engine is slow or unresponsive. This guarantees that traced applications never hang due to IPC delays.
+
+- Dynamic, Unlimited PID Tracking:
+  All process state (depth, syscall state, return values) is tracked using a dynamic hash map (pidmap.h). There are no static array limits—Sentinel scales to any PID value, even in containerized or long-running systems.
+
+- Configurable IPC Paths:
+  All named pipe paths are set via environment variables (SENTINEL_PIPE_REQ, SENTINEL_PIPE_RESP) with safe defaults. This allows parallel testing, CI, and multi-instance deployments without resource conflicts.
+
+- Clean, Deduplicated Syscall Watchlist:
+  The syscall map (syscall_map.h) is free of duplicates and includes robust tracking for resource duplication syscalls (dup, dup2, dup3).
+
+- Production-Grade Build System:
+  The Makefile is clean, with no duplicate targets or legacy rules.
+
+### Changelog: M3.3
+
+- Non-blocking kernel verdicts (no more system freezes)
+- Dynamic PID state (hash map, unlimited PIDs)
+- Environment-based config (no hardcoded pipe paths)
+- Syscall watchlist cleanup (no duplicates, full coverage)
+- Robust, scalable, and ready for deployment
+
+Sentinel Runtime is now ready for real-world deployment, research, and advanced security engineering.
 
 

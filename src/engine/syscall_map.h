@@ -63,10 +63,7 @@ static const syscall_sig_t WATCHLIST[] = {
     { SYS_connect,  "connect",  0, ARG_INT },
     { SYS_sendto,   "sendto",   0, ARG_INT },
     { SYS_sendmsg,  "sendmsg",  0, ARG_INT },
-    // Add these to your syscall_sig_t WATCHLIST[]
-{SYS_dup,    "dup",    0, ARG_INT},  // Track dup(old_fd)
-{SYS_dup2,   "dup2",   0, ARG_INT},  // Track dup2(old_fd, new_fd)
-{SYS_dup3,   "dup3",   0, ARG_INT},  // Track dup3
+
 
     /* --- Cleanup & State Reset --- */
     { SYS_close,    "close",    0, ARG_INT },
