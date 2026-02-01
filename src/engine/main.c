@@ -19,6 +19,7 @@
 #include "logger.h"
 #include "syscall_map.h"
 #include "pidmap.h"
+#include "fdmap.h"
 
 #define DEFAULT_PIPE_REQ "/tmp/sentinel_req"
 #define DEFAULT_PIPE_RESP "/tmp/sentinel_resp"
@@ -36,6 +37,7 @@ const char *get_pipe_resp() {
 #define COLOR_RESET   "\033[0m"
 
 static pidmap_t pidmap;
+static fdmap_t fdmap;
 
 const syscall_sig_t *get_syscall_sig(long sys_num) {
     for (int i = 0; WATCHLIST[i]. sys_num != -1; i++) {
@@ -92,6 +94,7 @@ int get_verdict(int fd_read) {
 }
 
 int main(int argc, char *argv[]) {
+        fdmap_init(&fdmap);
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <syscall_name> <program> [args... ]\n", argv[0]);
         return 1;
@@ -168,6 +171,7 @@ int main(int argc, char *argv[]) {
                     char arg_val[256] = {0};
                     unsigned long arg_addr = 0;
                     long fd_arg = -1;
+                    const char *fd_path = NULL;
 
                     if (sig->arg_reg_idx == 0) arg_addr = regs.rdi;
                     else if (sig->arg_reg_idx == 1) arg_addr = regs.rsi;
@@ -183,27 +187,47 @@ int main(int argc, char *argv[]) {
 
                     if (!is_entry) {
                         e->syscall_retval = (long)regs.rax;
+                        // --- fdmap updates on syscall exit ---
+                        // open/openat: record fd->path
+                        if ((strcmp(sig->name, "open") == 0 || strcmp(sig->name, "openat") == 0) && e->syscall_retval >= 0) {
+                            fdmap_set(&fdmap, e->syscall_retval, arg_val, current_pid);
+                        }
+                        // close: remove fd
+                        if (strcmp(sig->name, "close") == 0 && fd_arg >= 0) {
+                            fdmap_remove(&fdmap, fd_arg, current_pid);
+                        }
+                        // dup/dup2/dup3: duplicate mapping
+                        if ((strcmp(sig->name, "dup") == 0 || strcmp(sig->name, "dup2") == 0 || strcmp(sig->name, "dup3") == 0) && e->syscall_retval >= 0) {
+                            fdmap_dup(&fdmap, fd_arg, e->syscall_retval, current_pid);
+                        }
+                        // rename: update mapping if needed (not always needed, but for completeness)
+                        if (strcmp(sig->name, "rename") == 0 && fd_arg >= 0) {
+                            // Not implemented: could update fdmap if needed
+                        }
                     }
 
                     if (is_entry) {
                         char msg[512];
-                        if (sig->type == ARG_STRING) {
-                            snprintf(msg, sizeof(msg),
-                                "SYSCALL:%s:%s: pid=%d:fd=%ld:ret=%ld\n",
-                                sig->name, arg_val, current_pid, fd_arg,
-                                e->syscall_retval);
-                        } else {
-                            snprintf(msg, sizeof(msg),
-                                "SYSCALL:%s:%ld:pid=%d: fd=%ld: ret=%ld\n",
-                                sig->name, fd_arg, current_pid, fd_arg,
-                                e->syscall_retval);
+                        // For write/rename, look up fd->path
+                        if ((strcmp(sig->name, "write") == 0 || strcmp(sig->name, "sendmsg") == 0 || strcmp(sig->name, "sendto") == 0 || strcmp(sig->name, "rename") == 0) && fd_arg >= 0) {
+                            fd_path = fdmap_get(&fdmap, fd_arg, current_pid);
                         }
+                        // For open/openat, use arg_val
+                        if (strcmp(sig->name, "open") == 0 || strcmp(sig->name, "openat") == 0) {
+                            fd_path = arg_val;
+                        }
+                        // For all others, leave blank
+                        if (!fd_path) fd_path = "";
+
+                        snprintf(msg, sizeof(msg),
+                            "{\"verb\": \"%s\", \"path\": \"%s\", \"pid\": %d, \"fd\": %ld, \"ret\": %ld}\n",
+                            sig->name, fd_path, current_pid, fd_arg, e->syscall_retval);
 
                         if (write(fd_req, msg, strlen(msg)) != -1) {
                             if (! get_verdict(fd_resp)) {
                                 printf("       " COLOR_RED "[BLOCKED]" COLOR_RESET
                                        " PID:  %d | Action: %s | Target: %s | FD:  %ld\n",
-                                       current_pid, sig->name, arg_val, fd_arg);
+                                       current_pid, sig->name, fd_path, fd_arg);
                                 regs. orig_rax = -1;
                                 ptrace(PTRACE_SETREGS, current_pid, NULL, &regs);
                             }

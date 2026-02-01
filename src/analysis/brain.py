@@ -71,7 +71,7 @@ def parse_message(raw_data:  str) -> dict:
 def main():
     os.system("clear")
     print(f"{COLOR_GREEN}╔══════════════════════════════════════════════════════════════╗{COLOR_RESET}")
-    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.3 - Exfiltration Detection Mode   ║{COLOR_RESET}")
+    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.4 - Exfiltration Detection Mode   ║{COLOR_RESET}")
     print(f"{COLOR_GREEN}╚══════════════════════════════════════════════════════════════╝{COLOR_RESET}")
     print()
 
@@ -156,10 +156,17 @@ def main():
                 blocked = True
                 block_reason = "EXFILTRATION"
 
-            # Priority 2: Destructive actions on sensitive files (existing M3.0 logic)
-            elif verb in destructive_verbs and concept in sensitive_tags:
+            # Priority 2: INTEGRITY SHIELD (Aggressive Write Blocking)
+            # Rule: NEVER allow modification of sensitive files.
+            elif verb in ["write", "unlink", "unlinkat", "rmdir", "rename"] and concept in sensitive_tags:
                 blocked = True
-                block_reason = "DESTRUCTIVE"
+                block_reason = "INTEGRITY_VIOLATION"
+
+            # Priority 3: HONEYPOT (Aggressive Read Blocking)
+            # Rule: If anyone touches a 'bait' file, kill them.
+            elif "honeypot" in path.lower() or "secret_passwords" in path.lower():
+                blocked = True
+                block_reason = "HONEYPOT_TRIGGERED"
 
             # --- EXECUTE & LOG ---
             if blocked:
