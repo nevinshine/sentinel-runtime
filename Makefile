@@ -1,4 +1,5 @@
 CC = gcc
+# Ensure we include the engine directory for headers
 CFLAGS = -Wall -O2 -I./src/engine
 TARGET = bin/sentinel
 
@@ -8,9 +9,10 @@ TEST_SRC_2 = tests/evasion/dup_test.c
 
 all: sentinel recursive_fork dup_test
 
+# FIXED: Added src/engine/fdmap.c to the compile list
 sentinel: src/engine/main.c src/engine/logger.c src/engine/fdmap.c
 	@mkdir -p bin
-	@echo "[BUILD] Compiling Sentinel Engine (M3.2)..."
+	@echo "[BUILD] Compiling Sentinel Engine (M3.4)..."
 	$(CC) $(CFLAGS) -o $(TARGET) src/engine/main.c src/engine/logger.c src/engine/fdmap.c
 
 recursive_fork: $(TEST_SRC_1)
@@ -20,7 +22,6 @@ recursive_fork: $(TEST_SRC_1)
 dup_test: $(TEST_SRC_2)
 	@mkdir -p bin
 	$(CC) -o bin/dup_test $(TEST_SRC_2)
-
 
 clean:
 	@rm -rf bin/*
