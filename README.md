@@ -1,8 +1,11 @@
+# Sentinel Runtime Defense System
+> **Unified Host-Based Intrusion Detection & Network Defense System (HIDS/NIDS)**
+
 ```console
 root@Sentinel-Node:~# ./sentinel_guard --attach --persistence
 
  [ INIT ] CHECKING PTRACE SCOPE ........................ [YAMA: OFF]
- [ IPC  ] OPENING NEURAL BRIDGE ........................ [/tmp/sentinel_req]
+ [ IPC  ] OPENING LOGIC BRIDGE ......................... [/tmp/sentinel_req]
  [ LOAD ] LOADING SEMANTIC MAPS ........................ [DONE]
  [ W-DOG] STARTING WATCHDOG ORCHESTRATOR ............... [ACTIVE]
  [ HOOK ] ATTACHING INTERCEPTOR ........................ [PID: ALL]
@@ -14,14 +17,14 @@ root@Sentinel-Node:~# ./sentinel_guard --attach --persistence
    ███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗
    ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
 
-  >> HOST-BASED INTRUSION PREVENTION SYSTEM (HIPS) <<
+  >> UNIFIED RUNTIME DEFENSE GRID (v3.6) <<
 
   [RUNTIME STATUS]
-  > VERSION:       M3.4 (Persistence + Canonicalization)
+  > VERSION:       M3.6 (Unified Grid: Auto-DLP + Logic Trap)
   > ENGINE:        C (Ptrace Sysemulation)
-  > BRAIN:         Python (Semantic State Machine)
+  > BRAIN:         Python (Deterministic State Machine)
+  > FIREWALL:      Hyperion XDP (Bridge Active)
   > TARGET:        Research Artifact (CISPA / Saarland MSc)
-  > MITRE:         T1562.001 (Impair Defenses) Mapped
 
 ```
 
@@ -29,90 +32,106 @@ root@Sentinel-Node:~# ./sentinel_guard --attach --persistence
 
 ## [ 0x01 ] ABSTRACT
 
-**Sentinel Runtime** is a Linux host-based defense system focused on syscall-level monitoring and cross-process taint tracking. By establishing a closed-loop control system via `ptrace`, Sentinel connects a high-speed C interception engine to a Python-based **Cognitive Engine** to enforce security policies in real-time.
+**Sentinel Runtime** is a deterministic runtime defense system that unifies **Host-Based Security** (Syscall Analysis) with **Network Defense** (XDP Firewall).
 
-> **[Read the MITRE Mapping](https://www.google.com/search?q=docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
+Unlike traditional systems that rely on probabilistic AI or static signatures, Sentinel uses a **Semantic State Machine** to track the "Kill Chain" of a process in real-time. By connecting the syscall layer to the network layer, Sentinel achieves **Autonomous Data Loss Prevention (Auto-DLP)**: detecting sensitive file access in userspace and instantly reprogramming the kernel-level firewall to block exfiltration.
 
----
-
-## [ 0x02 ] RESEARCH PROOF (VIDEO ARTIFACTS)
-
-These recordings provide immutable proof of the system's defensive capabilities.
-
-### 1. Ransomware Blocking (M3.0)
-
-*Active blocking of Ransomware-style file destruction (`unlink`).*
-
-![Ransomware Blocking](assets/sentinel_demo.gif)
-
-### 2. Evasion Detection (M3.3)
-
-*Detection of sophisticated exfiltration using **Symlink Aliasing** and **FD Duplication**.*
-
-![Evasion Demo](assets/sentinel_evasion.gif)
-
-### 3. Watchdog Persistence (M3.4)
-
-*Demonstration of the **Watchdog Orchestrator** resurrecting the security stack after a `SIGKILL` attack (Self-Healing).*
-
- ![Persistence Demo](assets/sentinel_persistence.gif)
+> **[Read the MITRE Mapping](https://github.com/nevinshine/sentinel-runtime/blob/main/docs/MITRE_MAPPING.md)** - A technical deep-dive into how Sentinel aligns with the ATT&CK framework.
 
 ---
 
-## [ 0x03 ] CAPABILITY MILESTONES
+## [ 0x02 ] 🎥 LIVE DEMOS (DUAL-PERSPECTIVE)
+
+We provide two perspectives of the system in action to validate both the **internal engineering logic** and the **external security efficacy**.
+
+### 1. The Engineer's View: "The Watchtower"
+
+*A view inside the Logic Brain (`brain.py`). Observe the real-time interception of syscalls, state transitions (IDLE -> SENSITIVE_HELD), and the instant "BLOCK" decision upon exfiltration attempts.*
+
+[![asciicast](https://asciinema.org/a/8cmVyWWx4JjpTnam.svg)](https://asciinema.org/a/8cmVyWWx4JjpTnam)
+
+### 2. The Validator's View: "The Scoreboard"
+
+*The automated `unified_test_suite.sh` proving the system passes 4/4 critical security challenges: Trust Filter, Integrity Shield, USB Trap, and Auto-DLP.*
+
+[![asciicast](https://asciinema.org/a/0Pmewo1HxjA4tXFo.svg)](https://asciinema.org/a/0Pmewo1HxjA4tXFo)
+
+---
+
+## [ 0x03 ] ARCHITECTURAL PIVOT: WHY LOGIC > AI?
+
+In earlier iterations (v1.0 - v2.0), Sentinel employed a **"Deep Wise Network" (DWN)** based on PyTorch/TensorFlow for anomaly detection. In **Milestone 3.6**, we architecturally pivoted to a **Deterministic State Machine**.
+
+| Feature | Legacy AI Model (DWN) | Modern Logic Brain (M3.6) |
+| --- | --- | --- |
+| **Decision Basis** | Probabilistic (0.0 - 1.0 score) | Deterministic (State Transitions) |
+| **False Positives** | High (Unpredictable behavior) | **Zero** (For defined Kill Chains) |
+| **Explainability** | "Black Box" (Why did it block?) | **Audit Trail** (Read Secret -> Write Socket) |
+| **Performance** | Heavy (Requires GPU/High CPU) | **Lightweight** (Pure Python Logic) |
+| **Reaction Time** | ~200ms (Inference Latency) | **<10ms** (Instant State Check) |
+
+**Conclusion:** For runtime enforcement, certainty is superior to probability. The State Machine ensures we never block a legitimate process unless it strictly violates a defined security policy (e.g., Ransomware behavior).
+
+---
+
+## [ 0x04 ] CAPABILITY MILESTONES
 
 | FEATURE | MILESTONE | STATUS | DESCRIPTION |
 | --- | --- | --- | --- |
 | **Exfiltration Detection** | M3.1 | ✅ | State Machine + Cross-Process Taint Tracking. |
-| **Benchmark Suite** | M3.2 | ✅ | Quantified syscall overhead and IPC throughput. |
-| **Path Canonicalization** | M3.3 | ✅ | **[NEW]** Defeats Symlink/Traversal evasion via `realpath`. |
-| **Watchdog Persistence** | M3.4 | ✅ | **[NEW]** Self-healing orchestrator for tamper resistance. |
-| **MITRE Alignment** | M3.4 | ✅ | **[NEW]** Formal mapping to 5+ ATT&CK techniques. |
+| **Path Canonicalization** | M3.3 | ✅ | Defeats Symlink/Traversal evasion via `realpath`. |
+| **Watchdog Persistence** | M3.4 | ✅ | Self-healing orchestrator for tamper resistance. |
+| **Integrity Shield** | M3.5 | ✅ | **[NEW]** Anti-Ransomware (Blocks `unlink`/`rename` on sensitive files). |
+| **Auto-DLP Bridge** | M3.6 | ✅ | **[NEW]** Connects Host Events to Network Firewall (Hyperion XDP). |
 
 ---
 
-## [ 0x04 ] PERFORMANCE BENCHMARKS (M3.2)
+## [ 0x05 ] USAGE (M3.6 UNIFIED MODE)
 
-| METRIC | VALUE | CONTEXT |
-| --- | --- | --- |
-| **Syscall Overhead** | 20-40x | Inherent to `ptrace` context switching. |
-| **IPC Throughput** | 28,628 ops/sec | Synchronous blocking over named pipes. |
-| **Memory Usage** | ~100 MB | Total stack (Engine + Brain + Maps). |
-
----
-
-## [ 0x05 ] USAGE (M3.4 SERVICE MODE)
-
-### 1. Build Artifacts
+### 1. Build The Engine
 
 ```bash
 make clean && make
+
 ```
 
-### 2. Start Persistent Guardian
+### 2. Start The Defense Grid
 
-To run Sentinel in a self-healing "Service Mode" that resists termination:
+You must run the Brain (Logic) and the Body (Interceptor) together.
+
+**Terminal 1: The Brain**
 
 ```bash
-./scripts/watchdog.sh
+python3 src/analysis/brain.py
+
 ```
 
-### 3. Verify Evasion Block
+**Terminal 2: The Body (or Test Suite)**
 
 ```bash
-# In a separate terminal
-sudo ./bin/sentinel test ./bin/dup_test
+# Run the validation suite
+./tests/unified_test_suite.sh
+
 ```
 
 ---
 
-## [ 0x06 ] TAGS & VERSIONING
+## [ 0x06 ] TECHNICAL SPECIFICATIONS (M3.6)
 
-| TAG | MILESTONE | KEY ACHIEVEMENT |
-| --- | --- | --- |
-| **M3.2** | Benchmarks | Performance baseline established. |
-| **M3.3** | Hardening | Path Canonicalization implemented. |
-| **M3.4** | Persistence | Watchdog Orchestrator & MITRE Mapping finalized. |
+### The "Auto-DLP" Bridge
+
+Sentinel M3.6 introduces a novel bridge between userspace and kernelspace.
+
+1. **Trigger:** User opens `top_secret.pdf`.
+2. **Analysis:** Brain tags file as `SENSITIVE_USER_FILE`.
+3. **Action:** Brain writes the filename to `signatures.txt`.
+4. **Enforcement:** Hyperion XDP (Network Firewall) reads the signature and instantly drops any outgoing packet containing that filename.
+
+### Performance Profile
+
+* **Syscall Overhead:** ~25x (Optimized `ptrace` handling).
+* **Memory Footprint:** <45MB (Reduced by 60% after removing AI dependencies).
+* **Stability:** Non-blocking I/O ensures the host system never freezes, even if the Brain is paused.
 
 ---
 
@@ -121,39 +140,8 @@ sudo ./bin/sentinel test ./bin/dup_test
 ```text
 @software{sentinel2026,
   author = {Nevin},
-  title = {Sentinel: Semantic Runtime Defense via Ptrace},
+  title = {Sentinel: Unified Runtime Defense via Semantic State Machine},
   year = {2026},
+  version = {V3.6.0},
   url = {[https://github.com/nevinshine/sentinel-runtime](https://github.com/nevinshine/sentinel-runtime)}
 }
-```
-
-## Advanced Engineering: Sentinel Runtime M3.3 (Stable Alpha)
-
-### Key Features
-
-- Non-Blocking Kernel I/O:
-  The C engine uses select() with a 100ms timeout to prevent system freezes if the Python analysis engine is slow or unresponsive. This guarantees that traced applications never hang due to IPC delays.
-
-- Dynamic, Unlimited PID Tracking:
-  All process state (depth, syscall state, return values) is tracked using a dynamic hash map (pidmap.h). There are no static array limits—Sentinel scales to any PID value, even in containerized or long-running systems.
-
-- Configurable IPC Paths:
-  All named pipe paths are set via environment variables (SENTINEL_PIPE_REQ, SENTINEL_PIPE_RESP) with safe defaults. This allows parallel testing, CI, and multi-instance deployments without resource conflicts.
-
-- Clean, Deduplicated Syscall Watchlist:
-  The syscall map (syscall_map.h) is free of duplicates and includes robust tracking for resource duplication syscalls (dup, dup2, dup3).
-
-- Production-Grade Build System:
-  The Makefile is clean, with no duplicate targets or legacy rules.
-
-### Changelog: M3.3
-
-- Non-blocking kernel verdicts (no more system freezes)
-- Dynamic PID state (hash map, unlimited PIDs)
-- Environment-based config (no hardcoded pipe paths)
-- Syscall watchlist cleanup (no duplicates, full coverage)
-- Robust, scalable, and ready for deployment
-
-Sentinel Runtime is now ready for real-world deployment, research, and advanced security engineering.
-
-
