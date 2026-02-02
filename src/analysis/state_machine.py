@@ -1,5 +1,5 @@
 # src/analysis/state_machine.py
-# RELEASE:  M3.2.0 - Production Ready (Dup Support + Pipeline Timeout)
+# RELEASE:  M3.6.0
 
 import time
 from enum import Enum, auto
