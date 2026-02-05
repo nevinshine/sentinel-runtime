@@ -1,6 +1,3 @@
-# src/analysis/brain.py
-# RELEASE: Milestone 3.6 (Unified Defense: Integrity + Trust + Auto-DLP)
-
 import os
 import sys
 import json
@@ -9,6 +6,9 @@ import signal
 import subprocess
 from semantic import SemanticMapper
 from state_machine import ExfiltrationDetector
+
+# src/analysis/brain.py
+# RELEASE: Milestone 4.0 (Unified Defense: Seccomp + Integrity + Auto-DLP)
 
 # --- CONFIGURATION ---
 REQ_PIPE = os.environ.get("SENTINEL_PIPE_REQ", "/tmp/sentinel_req")
@@ -66,28 +66,24 @@ def update_hyperion_firewall(keyword):
             f.write(f"\n{clean_sig}")
             print(f"{COLOR_CYAN}[BRIDGE] 🛡️  Auto-DLP: Added '{clean_sig}' to Network Blocklist.{COLOR_RESET}")
             
-            # 4. Trigger Hyperion Reload (Optional: If Hyperion supports SIGHUP)
-            # os.system("pkill -HUP hyperion") 
     except Exception as e:
         print(f"[ERROR] Bridge failed: {e}")
 
 def parse_message(raw_data: str) -> dict:
     try:
         msg = json.loads(raw_data)
+        # Ensure default keys exist for legacy logic, but keep extra keys (cmd, flags)
         for k in ("verb", "path", "pid", "fd", "ret"):
             if k not in msg:
                 msg[k] = "" if k in ("verb", "path") else -1
         return msg
     except:
-        # Legacy Fallback
-        parts = raw_data.strip().split(":", 3)
-        if len(parts) < 3: return None
-        return {"verb": parts[1], "path": parts[2].strip(), "pid": 0, "fd": -1, "ret": -1}
+        return None
 
 def main():
     os.system("clear")
     print(f"{COLOR_GREEN}╔══════════════════════════════════════════════════════════════╗{COLOR_RESET}")
-    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v3.6 - UNIFIED DEFENSE GRID          ║{COLOR_RESET}")
+    print(f"{COLOR_GREEN}║  SENTINEL NEURAL ENGINE v4.0 - UNIFIED DEFENSE GRID          ║{COLOR_RESET}")
     print(f"{COLOR_GREEN}╚══════════════════════════════════════════════════════════════╝{COLOR_RESET}")
     print()
 
@@ -100,9 +96,9 @@ def main():
     f_resp = open(RESP_PIPE, "w")
     print(f"{COLOR_GREEN}+ [INFO] Sentinel Link Established.{COLOR_RESET}")
     print()
-    print("-" * 95)
-    print(f"{'VERDICT':<10} | {'PROC':<10} | {'ACTION':<10} | {'STATE':<22} | {'TAG':<18} | {'TARGET'}")
-    print("-" * 95)
+    print("-" * 115)
+    print(f"{'VERDICT':<10} | {'PROC':<10} | {'ACTION':<10} | {'STATE':<22} | {'TAG':<22} | {'TARGET'}")
+    print("-" * 115)
 
     # Security Policies
     sensitive_tags = ["SENSITIVE_USER_FILE", "CRITICAL_AUTH", "SSH_PRIVATE_KEY", "ROOT_SENSITIVE"]
@@ -136,7 +132,6 @@ def main():
             current_state = ctx.state.name
 
             # --- AUTO-DLP TRIGGER ---
-            # If a process opens a sensitive file, instantly block that filename on the network.
             if concept in sensitive_tags and verb in ["open", "openat"]:
                 update_hyperion_firewall(path)
 
@@ -144,8 +139,24 @@ def main():
             blocked = False
             block_reason = ""
 
+            # [NEW] PRIORITY 0: ARCHITECTURAL DEFENSE (Ghost/Invisible/Race)
+            if verb == "bpf":
+                blocked = True
+                block_reason = "KERNEL_ATTACK"
+                concept = "eBPF_INJECTION"
+            
+            elif verb == "mprotect" and "PROT_EXEC" in msg.get("flags", ""):
+                blocked = True
+                block_reason = "FILELESS_MALWARE"
+                concept = "MEMORY_WX_VIOLATION"
+
+            elif verb == "openat" and ("/proc/sys" in path or "/sys/kernel" in path):
+                blocked = True
+                block_reason = "CONTAINER_ESCAPE"
+                concept = "CRITICAL_HOST_PATH"
+
             # PRIORITY 1: EXFILTRATION (With Trust Filter)
-            if state_verdict == "BLOCK":
+            elif state_verdict == "BLOCK":
                 # FILTER: Trust system binaries talking to local sockets
                 if proc_name in TRUSTED_TALKERS and verb in ["sendto", "connect", "socket"]:
                     blocked = False
@@ -158,14 +169,11 @@ def main():
                 blocked = True
                 block_reason = "INTEGRITY"
 
-            # --- INSERT THIS NEW BLOCK HERE ---
             # PRIORITY 3: USB EXFILTRATION TRAP
             elif current_state == "SENSITIVE_DATA_HELD" and verb == "write":
-                 # Watch for real USBs (/media, /mnt) AND our test folder (fake_usb)
                  if path.startswith("/media") or path.startswith("/mnt") or "fake_usb" in path:
-                     blocked = True
-                     block_reason = "USB_EXFILTRATION"
-            # ----------------------------------
+                      blocked = True
+                      block_reason = "USB_EXFILTRATION"
 
             # PRIORITY 4: HONEYPOT (Deception)
             elif "honeypot" in path.lower() or "secret_passwords" in path.lower():
@@ -176,9 +184,13 @@ def main():
             if blocked:
                 f_resp.write("0")
                 f_resp.flush()
-                print(f"{COLOR_RED}{'BLOCK':<10} | {proc_name:<10} | {verb:<10} | {block_reason:<22} | {concept:<18} | {path}{COLOR_RESET}")
+                print(f"{COLOR_RED}{'BLOCK':<10} | {proc_name:<10} | {verb:<10} | {block_reason:<22} | {concept:<22} | {path}{COLOR_RESET}")
                 
-                if block_reason == "EXFILTRATION":
+                if block_reason == "KERNEL_ATTACK":
+                    print(f"{COLOR_RED}  └── ☠️  CRITICAL: INVISIBLE ENEMY TRAPPED! Kernel Integrity Saved.{COLOR_RESET}")
+                elif block_reason == "CONTAINER_ESCAPE":
+                    print(f"{COLOR_RED}  └── ☠️  CRITICAL: RUNC RACE CONDITION NEUTRALIZED!{COLOR_RESET}")
+                elif block_reason == "EXFILTRATION":
                      print(f"{COLOR_RED}  └── ⚠️  DATA LEAK BLOCKED! Process '{proc_name}' attempted network exfiltration.{COLOR_RESET}")
 
             else:
@@ -186,7 +198,6 @@ def main():
                 f_resp.flush()
                 
                 # --- NOISE REDUCTION ---
-                # Hide standard system noise to keep the demo clean
                 if concept in ["SHARED_LIBRARY", "PROC_FS", "DEVICE_NULL"]: continue
                 if verb == "write" and path == "": continue 
 
@@ -196,7 +207,7 @@ def main():
                 if concept in sensitive_tags: color = COLOR_CYAN
 
                 disp_path = path if len(path) <= 30 else path[:27] + "..."
-                print(f"{color}{'ALLOW':<10} | {proc_name:<10} | {verb:<10} | {current_state:<22} | {concept: <18} | {disp_path}{COLOR_RESET}")
+                print(f"{color}{'ALLOW':<10} | {proc_name:<10} | {verb:<10} | {current_state:<22} | {concept: <22} | {disp_path}{COLOR_RESET}")
 
         except KeyboardInterrupt:
             print(f"\n{COLOR_YELLOW}+ [INFO] Shutting down Sentinel...{COLOR_RESET}")

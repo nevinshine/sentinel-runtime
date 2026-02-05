@@ -1,237 +1,202 @@
 /*
  * sentinel-runtime: src/engine/main.c
- * RELEASE: Milestone 3.5 (Visuals + Stability + JSON)
+ * RELEASE: Milestone 4.0 (Seccomp-BPF + ADDFD Injection)
+ * DEFENSE: Blocks io_uring, Traps eBPF, Atomic TOCTOU Mitigation
  */
 
-#include <sys/ptrace.h>
-#include <sys/select.h>
-#include <sys/time.h>
+#define _GNU_SOURCE
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/user.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/ioctl.h>
+#include <sys/uio.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <linux/seccomp.h>
+#include <linux/filter.h>
+#include <linux/audit.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include "logger.h"
-#include "syscall_map.h"
-#include "pidmap.h"
-#include "fdmap.h"
+#include <stddef.h>
 
 // --- VISUALS ---
-#define COLOR_CYAN    "\033[1;36m"
 #define COLOR_RED     "\033[1;31m"
 #define COLOR_GREEN   "\033[1;32m"
+#define COLOR_YELLOW  "\033[1;33m"
 #define COLOR_RESET   "\033[0m"
 
-void print_banner() {
-    printf("\033[2J\033[1;1H"); // Clear Screen
-    printf(COLOR_CYAN);
-    printf("   _____            __  _            __\n");
-    printf("  / ___/___  ____  / /_(_)___  ___  / /\n");
-    printf("  \\__ \\/ _ \\/ __ \\/ __/ / __ \\/ _ \\/ / \n");
-    printf(" ___/ /  __/ / / / /_/ / / / /  __/ /  \n");
-    printf("/____/\\___/_/ /_/\\__/_/_/ /_/\\___/_/   \n");
-    printf(COLOR_RESET);
-    printf("   :: Runtime Integrity Engine v3.5 ::\n");
-    printf("   [+] Integrity Shield: ACTIVE\n");
-    printf("   [+] JSON Protocol:    ACTIVE\n\n");
+const char *get_pipe_req() { return getenv("SENTINEL_PIPE_REQ") ? getenv("SENTINEL_PIPE_REQ") : "/tmp/sentinel_req"; }
+const char *get_pipe_resp() { return getenv("SENTINEL_PIPE_RESP") ? getenv("SENTINEL_PIPE_RESP") : "/tmp/sentinel_resp"; }
+
+// --- IPC HELPERS ---
+int send_fd(int sock, int fd) {
+    struct msghdr msg = {0};
+    char buf[CMSG_SPACE(sizeof(int))];
+    memset(buf, 0, sizeof(buf));
+    struct iovec io = { .iov_base = "1", .iov_len = 1 };
+    msg.msg_iov = &io; msg.msg_iovlen = 1; msg.msg_control = buf; msg.msg_controllen = sizeof(buf);
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET; cmsg->cmsg_type = SCM_RIGHTS; cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    *((int *)CMSG_DATA(cmsg)) = fd;
+    return sendmsg(sock, &msg, 0);
 }
 
-// --- CONFIGURATION ---
-const char *get_pipe_req() {
-    const char *env = getenv("SENTINEL_PIPE_REQ");
-    return env ? env : "/tmp/sentinel_req";
-}
-const char *get_pipe_resp() {
-    const char *env = getenv("SENTINEL_PIPE_RESP");
-    return env ? env : "/tmp/sentinel_resp";
-}
-
-static pidmap_t pidmap;
-static fdmap_t fdmap;
-
-// --- HELPERS ---
-void sanitize_json_string(char *str) {
-    if (!str) return;
-    for (int i = 0; str[i]; i++) {
-        if (str[i] == '"' || str[i] == '\\' || str[i] < 32) str[i] = '_';
-    }
+int recv_fd(int sock) {
+    struct msghdr msg = {0};
+    char buf[CMSG_SPACE(sizeof(int))];
+    memset(buf, 0, sizeof(buf));
+    char nothing;
+    struct iovec io = { .iov_base = &nothing, .iov_len = 1 };
+    msg.msg_iov = &io; msg.msg_iovlen = 1; msg.msg_control = buf; msg.msg_controllen = sizeof(buf);
+    if (recvmsg(sock, &msg, 0) < 0) return -1;
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    return *((int *)CMSG_DATA(cmsg));
 }
 
-const syscall_sig_t *get_syscall_sig(long sys_num) {
-    for (int i = 0; WATCHLIST[i].sys_num != -1; i++) {
-        if (WATCHLIST[i].sys_num == sys_num) return &WATCHLIST[i];
-    }
-    return NULL;
+// --- SECCOMP INSTALLER ---
+int install_filter(int sock_fd) {
+    struct sock_filter filter[] = {
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch))),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))),
+
+        // [VECTOR A] Block Ghost Tunnel (io_uring)
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_setup, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_enter, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+
+        // [VECTOR B] Trap Invisible Enemy (eBPF)
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_bpf, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+
+        // [VECTOR C] Trap Criticals (execve, openat, mprotect)
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_execve, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_openat, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_connect, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_mprotect, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+
+        // PERFORMANCE: Allow everything else
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    struct sock_fprog prog = { .len = sizeof(filter)/sizeof(filter[0]), .filter = filter };
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) return -1;
+    int listener = syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_NEW_LISTENER, &prog);
+    if (listener < 0) return -1;
+    send_fd(sock_fd, listener);
+    close(listener);
+    return 0;
 }
 
-void read_string(pid_t pid, unsigned long addr, char *str, int max_len) {
-    int len = 0;
-    unsigned long word;
-    while (len < max_len) {
-        errno = 0;
-        word = ptrace(PTRACE_PEEKDATA, pid, addr + len, NULL);
-        if (errno != 0) break;
-        memcpy(str + len, &word, sizeof(word));
-        if (memchr(&word, 0, sizeof(word)) != NULL) break;
-        len += sizeof(word);
-    }
-    str[max_len - 1] = '\0';
+// --- HELPER: Atomic Injection (The TOCTOU Fix) ---
+int inject_fd(int notify_fd, int victim_pid, int local_fd, struct seccomp_notif *req, struct seccomp_notif_resp *resp) {
+    struct seccomp_notif_addfd addfd = {0};
+    addfd.id = req->id;
+    addfd.srcfd = local_fd;
+    addfd.newfd = 0; // Let kernel pick, or 0 to alloc
+    addfd.flags = SECCOMP_ADDFD_FLAG_SETFD; // Set the FD in victim
+
+    int remote_fd = ioctl(notify_fd, SECCOMP_IOCTL_NOTIF_ADDFD, &addfd);
+    if (remote_fd < 0) return -1;
+
+    // We successfully injected! Now tell syscall to "return" this FD
+    resp->val = remote_fd;
+    resp->error = 0;
+    resp->flags = 0; // Do NOT continue syscall (we handled it)
+    return 0;
 }
 
-int get_verdict(int fd_read) {
-    char buf[2];
-    fd_set set;
-    struct timeval timeout;
-    FD_ZERO(&set);
-    FD_SET(fd_read, &set);
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000; // 100ms timeout
-
-    int rv = select(fd_read + 1, &set, NULL, NULL, &timeout);
-    if (rv <= 0) return 1; // Timeout or Error -> Fail Open
-    
-    int n = read(fd_read, buf, 1);
-    if (n > 0 && buf[0] == '0') return 0; // BLOCK
-    return 1; // ALLOW
+int read_remote_string(pid_t pid, unsigned long addr, char *buf, size_t max_len) {
+    struct iovec local = {buf, max_len}, remote = {(void*)addr, max_len};
+    return process_vm_readv(pid, &local, 1, &remote, 1, 0);
 }
 
+// --- MAIN ---
 int main(int argc, char *argv[]) {
-    fdmap_init(&fdmap);
-
-    // FIXED: Allow ./sentinel <cmd>
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <program> [args...]\n", argv[0]);
-        return 1;
-    }
-
-    print_banner();
-
-    // --- LAUNCH TARGET ---
-    pid_t original_child = fork();
-    if (original_child == 0) {
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-        raise(SIGSTOP);
-        execvp(argv[1], &argv[1]);
-        perror("execvp");
-        exit(1);
-    } 
-
-    // --- PARENT (SENTINEL) ---
-    int status;
-    struct user_regs_struct regs;
-
+    if (argc < 2) { fprintf(stderr, "Usage: %s <cmd>\n", argv[0]); return 1; }
+    int sv[2]; socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
     int fd_req = open(get_pipe_req(), O_WRONLY);
-    if (fd_req < 0) { fprintf(stderr, COLOR_RED "[!] IPC Error: Run 'brain.py' first.\n" COLOR_RESET); return 1; }
     int fd_resp = open(get_pipe_resp(), O_RDONLY);
 
-    waitpid(original_child, &status, 0);
-    
-    pidmap_entry_t *e = pidmap_get(&pidmap, original_child, 1);
-    if (e) {
-        e->depth = 0;
-        printf(COLOR_GREEN "[+] Attached to Target (PID: %d)\n" COLOR_RESET, original_child);
+    pid_t child = fork();
+    if (child == 0) {
+        close(sv[0]); close(fd_req); close(fd_resp);
+        if (install_filter(sv[1]) != 0) exit(1);
+        execvp(argv[1], &argv[1]);
+        exit(1);
     }
+    close(sv[1]);
+    int notify_fd = recv_fd(sv[0]);
+    close(sv[0]);
 
-    ptrace(PTRACE_SETOPTIONS, original_child, 0,
-            PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC |
-            PTRACE_O_EXITKILL | PTRACE_O_TRACEVFORK | PTRACE_O_TRACESYSGOOD);
-
-    ptrace(PTRACE_SYSCALL, original_child, NULL, NULL);
+    printf(COLOR_GREEN "[+] Sentinel M4 Active. Seccomp FD: %d\n" COLOR_RESET, notify_fd);
 
     while (1) {
-        pid_t current_pid = waitpid(-1, &status, __WALL);
-        if (current_pid == -1) break;
-
-        if (WIFEXITED(status) || WIFSIGNALED(status)) {
-            if (current_pid == original_child) break;
-            pidmap_remove(&pidmap, current_pid);
-            continue;
+        struct seccomp_notif req = {0};
+        struct seccomp_notif_resp resp = {0};
+        if (ioctl(notify_fd, SECCOMP_IOCTL_NOTIF_RECV, &req) < 0) {
+            if (errno == EINTR) continue;
+            break;
         }
 
-        e = pidmap_get(&pidmap, current_pid, 1);
-        if (!e) { ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL); continue; }
+        resp.id = req.id;
+        char msg[512] = {0};
+        char path[256] = {0};
+        int verdict = 1; // Default Allow
 
-        int event = status >> 16;
-        if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_CLONE || event == PTRACE_EVENT_VFORK) {
-            unsigned long new_pid_l;
-            ptrace(PTRACE_GETEVENTMSG, current_pid, 0, &new_pid_l);
-            pid_t new_pid = (pid_t)new_pid_l;
-            pidmap_entry_t *child = pidmap_get(&pidmap, new_pid, 1);
-            if (child) {
-                child->depth = e->depth + 1;
-                child->syscall_state = 0;
-            }
-            ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
-            continue;
+        if (ioctl(notify_fd, SECCOMP_IOCTL_NOTIF_ID_VALID, &req.id) < 0) continue;
+
+        if (req.data.nr == __NR_openat) {
+            read_remote_string(req.pid, req.data.args[1], path, 256);
+            snprintf(msg, 512, "{\"verb\":\"openat\",\"path\":\"%s\",\"pid\":%d}\n", path, req.pid);
+        } else if (req.data.nr == __NR_execve) {
+            read_remote_string(req.pid, req.data.args[0], path, 256);
+            snprintf(msg, 512, "{\"verb\":\"execve\",\"path\":\"%s\",\"pid\":%d}\n", path, req.pid);
+        } else if (req.data.nr == __NR_bpf) {
+            snprintf(msg, 512, "{\"verb\":\"bpf\",\"cmd\":%llu,\"pid\":%d}\n", req.data.args[0], req.pid);
+            printf(COLOR_RED "[!] eBPF LOAD DETECTED\n" COLOR_RESET);
+        } else if (req.data.nr == __NR_mprotect && (req.data.args[2] & 0x4)) {
+            snprintf(msg, 512, "{\"verb\":\"mprotect\",\"flags\":\"PROT_EXEC\",\"pid\":%d}\n", req.pid);
         }
 
-        if (WIFSTOPPED(status) && (WSTOPSIG(status) == (SIGTRAP | 0x80))) {
-            ptrace(PTRACE_GETREGS, current_pid, NULL, &regs);
-            const syscall_sig_t *sig = get_syscall_sig(regs.orig_rax);
+        if (msg[0]) {
+            write(fd_req, msg, strlen(msg));
+            char buf[2] = {0};
+            if (read(fd_resp, buf, 1) > 0 && buf[0] == '0') verdict = 0;
+        }
 
-            int is_entry = (e->syscall_state == 0);
-            e->syscall_state = !e->syscall_state;
-
-            if (sig) {
-                char arg_val[256] = {0};
-                long fd_arg = -1;
-
-                if (sig->type == ARG_STRING) {
-                    unsigned long addr = (sig->arg_reg_idx == 0) ? regs.rdi : regs.rsi;
-                    if (addr != 0) read_string(current_pid, addr, arg_val, 256);
-                } else if (sig->type == ARG_INT) {
-                    fd_arg = (long)regs.rdi;
+        if (verdict == 1 && req.data.nr == __NR_openat) {
+            // *** ATOMIC INJECTION (Anti-Race) ***
+            // 1. We open the file safely on host
+            int local_fd = openat(AT_FDCWD, path, req.data.args[2], req.data.args[3]);
+            if (local_fd >= 0) {
+                // 2. Inject it into victim
+                if (inject_fd(notify_fd, req.pid, local_fd, &req, &resp) == 0) {
+                    close(local_fd);
+                    ioctl(notify_fd, SECCOMP_IOCTL_NOTIF_SEND, &resp);
+                    continue; // Skip the standard response logic
                 }
-
-                if (!is_entry) {
-                    e->syscall_retval = (long)regs.rax;
-                    if (e->syscall_retval >= 0) {
-                        if (strcmp(sig->name, "open") == 0 || strcmp(sig->name, "openat") == 0)
-                            fdmap_set(&fdmap, e->syscall_retval, arg_val, current_pid);
-                        else if (strcmp(sig->name, "dup") == 0 || strcmp(sig->name, "dup2") == 0)
-                            fdmap_dup(&fdmap, fd_arg, e->syscall_retval, current_pid);
-                    }
-                    if (strcmp(sig->name, "close") == 0) fdmap_remove(&fdmap, fd_arg, current_pid);
-                }
-
-                if (is_entry) {
-                    char msg[512];
-                    char safe_path[256] = {0};
-
-             if (sig->type == ARG_STRING) {
-                        // FIX: Use snprintf to ensure null-termination
-                        snprintf(safe_path, sizeof(safe_path), "%s", arg_val);
-                    } else if (fd_arg >= 0) {
-                        const char *p = fdmap_get(&fdmap, fd_arg, current_pid);
-                        if (p) snprintf(safe_path, sizeof(safe_path), "%s", p);
-                    }
-
-                    sanitize_json_string(safe_path);
-
-                    snprintf(msg, sizeof(msg),
-                        "{\"verb\": \"%s\", \"path\": \"%s\", \"pid\": %d, \"fd\": %ld, \"ret\": %ld}\n",
-                        sig->name, safe_path, current_pid, fd_arg, e->syscall_retval);
-
-                    if (write(fd_req, msg, strlen(msg)) != -1) {
-                        if (!get_verdict(fd_resp)) {
-                            printf("       " COLOR_RED "[BLOCKED]" COLOR_RESET " %s | %s\n", sig->name, safe_path);
-                            regs.orig_rax = -1;
-                            ptrace(PTRACE_SETREGS, current_pid, NULL, &regs);
-                        }
-                    }
-                }
+                close(local_fd);
             }
-            ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
+        }
+        
+        if (verdict == 1) {
+            resp.flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
         } else {
-            ptrace(PTRACE_SYSCALL, current_pid, NULL, NULL);
+            resp.error = -EPERM;
         }
+        ioctl(notify_fd, SECCOMP_IOCTL_NOTIF_SEND, &resp);
     }
-    close(fd_req);
-    close(fd_resp);
     return 0;
 }
