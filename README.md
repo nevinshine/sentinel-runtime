@@ -150,35 +150,9 @@ Sentinel M4 retains the bridge between userspace and kernelspace.
   institution = {Research Artifact}
 }
 
-You are absolutely right. A professional "Research Artifact" submission must look clean. We need to remove the "battle scars" (test files like `secret_nuclear_codes.txt` and `ransomware_root`) so the file tree looks like a polished software release.
-
-Here is the **Cleanup Plan** and the **Final Directory Structure** text for your `README.md`.
-
-### **Step 1: Clean the Artifacts**
-
-Run these commands to delete the temporary files generated during our live demos. This will make your `tree` match the documentation.
-
-```bash
-# 1. Remove Test Artifacts (The "Nuclear Codes" and fake ransomware files)
-rm secret_nuclear_codes.txt sensitive_honeypot.txt id_rsa game_save.dat project_omega.pdf signatures.txt
-
-# 2. Remove Test Directories
-rm -rf RANSOMWARE_ROOT test_dir
-
-# 3. Remove compiled objects/binaries from source folders (Keep them in bin/)
-rm -rf src/analysis/__pycache__
-rm tests/torture 2>/dev/null 
-
-# 4. Remove benchmark logs
-rm sentinel_benchmark_results.json
-
 ```
 
 ---
-
-### **Step 2: The Final File Tree (For README.md)**
-
-Copy this block into the bottom of your `README.md`. It reflects your actual structure but looks professional.
 
 ## [ 0x08 ] PROJECT STRUCTURE
 
