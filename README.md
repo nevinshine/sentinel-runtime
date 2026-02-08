@@ -108,7 +108,6 @@ You must run the Brain (Logic) and the Body (Interceptor) together.
 
 ```bash
 python3 src/analysis/brain.py
-
 ```
 
 **Terminal 2: The Body (Interceptor)**
@@ -116,7 +115,6 @@ python3 src/analysis/brain.py
 ```bash
 # Protect a shell (and all its children)
 sudo ./bin/sentinel /bin/bash
-
 ```
 
 ---
@@ -145,7 +143,6 @@ Sentinel M4 retains the bridge between userspace and kernelspace.
   institution = {Research Artifact},
   url = {[https://github.com/nevinshine/sentinel-runtime](https://github.com/nevinshine/sentinel-runtime)}
 }
-
 ```
 
 ---
@@ -182,5 +179,4 @@ sentinel-runtime/
 ├── assets/                     # Demo Recordings (.cast/gif)
 ├── Makefile                    # Build Configuration
 └── README.md                   # Technical Documentation
-
 ```
