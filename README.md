@@ -138,16 +138,12 @@ Sentinel M4 retains the bridge between userspace and kernelspace.
 
 ```text
 @software{sentinel2026,
-  author = {Nevin},
+  author = {Nevin Shine},
   title = {Sentinel M4: Kernel Supervision via Seccomp User Notification},
   year = {2026},
-<<<<<<< Updated upstream
-  version = {V3.6.0},
-  url = {[https://github.com/nevinshine/sentinel-runtime](https://github.com/nevinshine/sentinel-runtime)}
-}
-=======
   version = {V4.0.0},
-  institution = {Research Artifact}
+  institution = {Research Artifact},
+  url = {[https://github.com/nevinshine/sentinel-runtime](https://github.com/nevinshine/sentinel-runtime)}
 }
 
 ```
