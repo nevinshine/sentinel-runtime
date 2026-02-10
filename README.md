@@ -1,4 +1,4 @@
-# 🚧 Status: M8.0 Architecture Migration (Active Research)
+# Live Status: M8.0 Architecture Migration (Active Research)
 
 > **Current Focus:** Migrating core logic from Phase 2 (Seccomp) to **Phase 3 (eBPF-LSM)**.  
 > - **Active Development:** Implementing **"The Bloodline"** (Process Inheritance Tracking) and `memfd_create` blocking in Ring 0.  
