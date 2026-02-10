@@ -56,63 +56,81 @@ volatile int running = 1;
 void handle_sig(int sig) { running = 0; }
 
 // Thread: Read Trace Pipe
+volatile int connected = 0;
+
+// Thread: Read Trace Pipe
 void *reader_thread(void *arg) {
-  FILE *fp = fopen(TRACE_PIPE, "r");
-  if (!fp)
-    return NULL;
+  while (running) {
+    FILE *fp = fopen(TRACE_PIPE, "r");
+    if (!fp) {
+      connected = 0;
+      sleep(1);
+      continue;
+    }
 
-  char line[512];
-  long b_count = 0;
-  long i_count = 0;
-  time_t last_check = time(NULL);
+    connected = 1;
+    char line[512];
+    long b_count = 0;
+    long i_count = 0;
+    time_t last_check = time(NULL);
 
-  while (running && fgets(line, sizeof(line), fp)) {
-    // Simple string matching is fast in C
-    if (strstr(line, "Sentinel: BLOCKED EXEC")) {
-      __sync_fetch_and_add(&total_blocks, 1);
-      b_count++;
+    while (running) {
+      if (!fgets(line, sizeof(line), fp)) {
+        if (ferror(fp)) {
+          // Error handling if needed
+        }
+        break; // EOF or error, close and retry
+      }
 
-      // Extract Log Data
-      // Format: ... bpf_trace_printk: Sentinel: BLOCKED EXEC TGID 12345 ...
-      char *tgid_ptr = strstr(line, "TGID");
-      char pid_str[16] = "???";
-      if (tgid_ptr)
-        sscanf(tgid_ptr, "TGID %15s", pid_str);
+      // Simple string matching is fast in C
+      if (strstr(line, "Sentinel: BLOCKED EXEC")) {
+        __sync_fetch_and_add(&total_blocks, 1);
+        b_count++;
 
-      // Add to Log Buffer (Lockless? No, naive ring buffer ok for TUI)
+        // Extract Log Data
+        // Format: ... bpf_trace_printk: Sentinel: BLOCKED EXEC TGID 12345 ...
+        char *tgid_ptr = strstr(line, "TGID");
+        char pid_str[16] = "???";
+        if (tgid_ptr)
+          sscanf(tgid_ptr, "TGID %15s", pid_str);
+
+        // Add to Log Buffer (Lockless? No, naive ring buffer ok for TUI)
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        char time_str[16];
+        strftime(time_str, sizeof(time_str), "%H:%M:%S", t);
+
+        int idx = log_head % LOG_LEN;
+        strcpy(logs[idx].time, time_str);
+        strcpy(logs[idx].pid, pid_str);
+        strcpy(logs[idx].event, "EXEC_BLOCK");
+        strcpy(logs[idx].details, "PING BLOCKED");
+        log_head++;
+      } else if (strstr(line, "Sentinel: INHERIT")) {
+        __sync_fetch_and_add(&total_inherits, 1);
+        i_count++;
+      }
+
+      // Rate Calculation
       time_t now = time(NULL);
-      struct tm *t = localtime(&now);
-      char time_str[16];
-      strftime(time_str, sizeof(time_str), "%H:%M:%S", t);
+      if (now - last_check >= 1) {
+        blocks_per_sec = b_count;
+        inherits_per_sec = i_count;
 
-      int idx = log_head % LOG_LEN;
-      strcpy(logs[idx].time, time_str);
-      strcpy(logs[idx].pid, pid_str);
-      strcpy(logs[idx].event, "EXEC_BLOCK");
-      strcpy(logs[idx].details, "PING BLOCKED");
-      log_head++;
-    } else if (strstr(line, "Sentinel: INHERIT")) {
-      __sync_fetch_and_add(&total_inherits, 1);
-      i_count++;
+        // Shift History
+        memmove(&block_history[0], &block_history[1],
+                sizeof(long) * (HISTORY_LEN - 1));
+        block_history[HISTORY_LEN - 1] = b_count; // Newest at end
+
+        b_count = 0;
+        i_count = 0;
+        last_check = now;
+      }
     }
-
-    // Rate Calculation
-    time_t now = time(NULL);
-    if (now - last_check >= 1) {
-      blocks_per_sec = b_count;
-      inherits_per_sec = i_count;
-
-      // Shift History
-      memmove(&block_history[0], &block_history[1],
-              sizeof(long) * (HISTORY_LEN - 1));
-      block_history[HISTORY_LEN - 1] = b_count; // Newest at end
-
-      b_count = 0;
-      i_count = 0;
-      last_check = now;
-    }
+    fclose(fp);
+    connected = 0;
+    sleep(1);
   }
-  fclose(fp);
   return NULL;
 }
 
@@ -162,9 +180,11 @@ void render() {
   sysinfo(&si);
   offset +=
       snprintf(buf + offset, sizeof(buf) - offset,
-               BG_BLACK COLOR_WHITE BOLD " SENTINEL KERNEL RUNTIME " COLOR_GREEN
-                                         "● ACTIVE " COLOR_RESET
+               BG_BLACK COLOR_WHITE BOLD " SENTINEL KERNEL RUNTIME "
+                                         "%s%s " COLOR_RESET
                                          " Uptime: %lds | Load: %.2f \033[K\n",
+               connected ? COLOR_GREEN "● ACTIVE" : COLOR_RED "● DISCONNECTED",
+               connected ? "" : "", // Placeholder
                si.uptime, si.loads[0] / 65536.0);
   offset += snprintf(buf + offset, sizeof(buf) - offset,
                      "─────────────────────────────────────────────────────────"
