@@ -1,119 +1,111 @@
 # Sentinel Runtime Defense System
 
-> Unified Host-Based Intrusion Detection & Network Defense System (HIDS/NIDS)
+**Unified Host-Based Intrusion Detection & Network Defense System (HIDS/NIDS)**
 
-```console
-root@Sentinel-Node:~# ./bin/sentinel /bin/bash
+**Sentinel Runtime** is a kernel-native security architecture designed to bridge the gap between user-space tracing and kernel-space filtering. Unlike legacy HIDS solutions that rely on high-overhead `ptrace` mechanisms, Sentinel utilizes **Seccomp User Notifications** and **eBPF-LSM** hooks to achieve near-native performance while intercepting critical control plane events.
 
- [ KERNEL ] LOADING SECCOMP-BPF FILTER ................. [ACTIVE]
- [ IPC    ] CONNECTING TO SEMANTIC BRAIN ............... [CONNECTED]
- [ TRAP   ] GHOST TUNNEL (IO_URING) .................... [BLOCKED]
- [ TRAP   ] INVISIBLE ENEMY (EBPF) ..................... [MONITORED]
- [ MODE   ] ATOMIC INJECTION (ANTI-TOCTOU) ............. [READY]
-
-   ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗
-   ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║
-   ███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║
-   ╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║██╔══╝  ██║
-   ███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗
-   ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-
-  >> SENTINEL RUNTIME (SECCOMP ARCHITECTURE) <<
-
-  [ CURRENT STATUS: M8.2 ACTIVE RESEARCH ]
-  > FOCUS:         Migrating Core Logic (Seccomp -> eBPF-LSM)
-  > FEATURE:       "The Bloodline" (Inheritance Tracking) & Anti-Memfd
-  > GOAL:          <5us Latency (Kernel-Native Enforcement)
-  > BRANCH:        See 'dev-ebpf' for active C code
-
-  [RUNTIME METADATA]
-  > VERSION:       M4.0 (Stable) -> M8.2 (In Development)
-  > ENGINE:        C (Seccomp-BPF + User Notification)
-  > FIREWALL:      Hyperion XDP (Bridge Active)
-  > TARGET:        Research Artifact (CISPA / Saarland MSc)
-```
-
------
-
-## [0x01] Abstract
-
-Sentinel represents a paradigm shift from user-space tracing (`ptrace`) to kernel-space filtering. Unlike legacy HIDS that suffer from significant overhead, Sentinel achieves native speed for 99% of operations by intercepting only critical control plane events (`execve`, `openat`, `connect`) while offloading deep analysis to a Userspace Supervisor.
-
-The current architecture introduces Architectural Hardening against modern Linux threats, specifically targeting "Ghost" I/O and kernel-resident malware.
+The system is currently architected to defend against modern Linux threats, specifically targeting "Ghost" I/O (`io_uring`), kernel-resident malware (`bpf` injection), and container escape vectors.
 
 > [!NOTE]
-> Read the [MITRE Mapping](docs/MITRE_MAPPING.md) for a technical deep-dive into how Sentinel aligns with the ATT&CK framework.
+> **Project Status: Active Research (M8.2)**
+> * **M4.0 (Stable):** Seccomp-BPF Architecture.
+> * **M8.2 (Dev):** eBPF-LSM Migration & "The Bloodline" Inheritance Tracking.
+> * **Target:** Research Artifact for CISPA / Saarland University MSc.
+> 
+> 
 
------
+## Architectural Pivot: Seccomp vs. Ptrace
 
-## [0x02] Architectural Pivot: Seccomp vs Ptrace
+In earlier iterations (v3.x), Sentinel employed a `ptrace` loop that paused every system call, resulting in prohibitive performance overhead. In Milestone 4.0, the architecture pivoted to **Seccomp User Notifications** (`SECCOMP_RET_USER_NOTIF`).
 
-In earlier iterations (v3.x), Sentinel employed a `ptrace` loop that paused every system call. In Milestone 4.0, we architecturally pivoted to Seccomp User Notifications (`SECCOMP_RET_USER_NOTIF`).
-
-|Feature        |Legacy M3 (Ptrace)            |Modern M4 (Seccomp)            |
-|---------------|------------------------------|-------------------------------|
-|Interception   |All Syscalls (Global Pause)   |Filtered (Only Critical Events)|
-|Overhead       |~54x (Heavy Context Switching)|~1.12x (Near Native Speed)     |
-|Throughput     |~28,000 OPS                   |~1,366,558 OPS                 |
-|Race Conditions|Vulnerable to TOCTOU          |Atomic Mitigation (ADDFD)      |
-|Blind Spots    |`io_uring`, eBPF loading      |Hard Blocked / Trapped         |
-
-**Conclusion:** For production runtime enforcement, Seccomp provides the necessary performance characteristics while maintaining the ability to inspect critical security boundaries.
-
------
-
-## [0x03] Critical Defense Capabilities (M4)
-
-### 1. The "Ghost Tunnel" Block (Anti-Evasion)
-
-- **Threat:** Malware using `io_uring` to bypass standard syscall auditing (e.g., "Curing" Rootkit).
-- **Defense:** Sentinel M4 enforces a Hard Block on `io_uring_setup` and `io_uring_enter` at the BPF level.
-- **Verdict:** `EPERM` returned instantly. Zero chance of evasion.
-
-### 2. The Invisible Enemy Trap (Kernel Integrity)
-
-- **Threat:** Loading malicious eBPF bytecode to blind security tools (e.g., BPFDoor).
-- **Defense:** Traps the `bpf()` syscall. The Supervisor analyzes the load attempt and blocks unauthorized programs before they execute.
-
-### 3. Atomic Injection (Anti-TOCTOU)
-
-- **Threat:** `runc` container escapes (CVE-2025-31133) utilizing Time-of-Check-Time-of-Use race conditions.
-- **Defense:** Sentinel uses `SECCOMP_IOCTL_NOTIF_ADDFD`. The Supervisor opens and verifies the file on behalf of the victim, then injects the safe File Descriptor. The victim never handles the path, making path-swapping attacks impossible.
-
------
-
-## [0x04] Performance Benchmarks (Validated)
-
-We benchmarked Sentinel M4 against the previous M3 (Ptrace) architecture and a Native Baseline.
-
-|Metric                |Native Linux (Baseline)|Sentinel M4 (Seccomp)|M3 Legacy (Ptrace)|
-|----------------------|-----------------------|---------------------|------------------|
-|Throughput (Fast Path)|1,556,510 OPS          |1,366,558 OPS        |~28,000 OPS       |
-|Overhead Impact       |0%                     |~12%                 |~5400%            |
-|Inspection Cost       |0.130s                 |2.313s               |>10.0s            |
+| Metric | Legacy M3 (Ptrace) | Modern M4 (Seccomp) | Improvement |
+| --- | --- | --- | --- |
+| **Interception Model** | Global Pause (All Syscalls) | Filtered (Critical Events Only) | **Selective** |
+| **Overhead** | ~54x (Context Switching) | ~1.12x (Near Native) | **98% Reduction** |
+| **Throughput** | ~28,000 OPS | ~1,366,558 OPS | **48x Increase** |
+| **Race Conditions** | Vulnerable to TOCTOU | Atomic Mitigation (ADDFD) | **Secure** |
+| **Blind Spots** | `io_uring`, eBPF loading | Hard Blocked / Trapped | **Covered** |
 
 > [!IMPORTANT]
-> Sentinel M4 retains ~88% of native throughput for compute-heavy workloads. The 2.3s latency on I/O-heavy tasks (Macro-Benchmark) reflects the cost of Deep Semantic Inspection on every file access. This is a deliberate trade-off for zero-false-positive security.
+> **Performance Conclusion**
+> For production runtime enforcement, Seccomp provides the necessary performance characteristics while maintaining the ability to inspect critical security boundaries. Sentinel M4 retains **~88% of native throughput** for compute-heavy workloads.
 
------
+## Core Defense Capabilities
 
-## [0x05] Usage (M4.0)
+### 1. Anti-Evasion: "Ghost Tunnel" Block
+
+* **Threat Vector:** Malware utilizing `io_uring` to perform asynchronous I/O, bypassing standard syscall auditing tools (e.g., "Curing" Rootkit techniques).
+* **Defense Mechanism:** Sentinel enforces a hard block on `io_uring_setup` and `io_uring_enter` at the BPF filter level.
+* **Verdict:** `EPERM` is returned instantly, eliminating this evasion path.
+
+### 2. Kernel Integrity: "Invisible Enemy" Trap
+
+* **Threat Vector:** Loading malicious eBPF bytecode to blind security tools or exfiltrate data (e.g., BPFDoor).
+* **Defense Mechanism:** Traps the `bpf()` syscall. The Userspace Supervisor analyzes the load attempt and blocks unauthorized programs before they can attach to kernel hooks.
+
+### 3. Anti-TOCTOU: Atomic Injection
+
+* **Threat Vector:** Container escapes (e.g., CVE-2025-31133) utilizing Time-of-Check-Time-of-Use race conditions during file descriptor passing.
+* **Defense Mechanism:** Sentinel utilizes `SECCOMP_IOCTL_NOTIF_ADDFD`. The Supervisor opens and verifies the file on behalf of the victim process, then injects the safe File Descriptor directly. The victim never handles the path, rendering path-swapping attacks impossible.
+
+## Performance Benchmarks
+
+Benchmarks were conducted comparing Sentinel M4 against the previous M3 architecture and a Native Linux baseline.
+
+| Metric | Native Linux (Baseline) | Sentinel M4 (Seccomp) | M3 Legacy (Ptrace) |
+| --- | --- | --- | --- |
+| **Throughput (Fast Path)** | 1,556,510 OPS | 1,366,558 OPS | ~28,000 OPS |
+| **Overhead Impact** | 0% | ~12% | ~5400% |
+| **Inspection Cost** | 0.130s | 2.313s | >10.0s |
+
+> [!WARNING]
+> The increased latency (2.3s) on I/O-heavy tasks reflects the cost of **Deep Semantic Inspection** on every file access. This is a deliberate architectural trade-off prioritizing zero-false-positive security over raw I/O speed.
+
+## Roadmap: Evolution to eBPF (M8)
+
+Sentinel is currently transitioning from Phase 2 (Seccomp/M4) to Phase 3 (eBPF-LSM/M8) to address advanced evasion techniques used by targeted threat actors.
+
+* **M5: "Project Ocular" (Observability Gap) [COMPLETED]**
+* *Problem:* Seccomp lacks deep argument inspection (pointer dereferencing).
+* *Solution:* Introduced eBPF `fentry` hooks for deep argument inspection, replacing Python loggers with C-based BPF ring buffers.
+
+
+* **M6: "The Iron Gate" (LSM Migration) [COMPLETED]**
+* *Problem:* Seccomp is strictly syscall-entry based.
+* *Solution:* Migrated enforcement to LSM Hooks (`security_bprm_check`, `security_file_open`). Enforcement now occurs after kernel path resolution.
+
+
+* **M7: "The Bloodline" (Inheritance Tracking) [COMPLETED]**
+* *Problem:* Malicious processes rapidly forking to evade supervisor attachment.
+* *Solution:* Implemented Kernel-Space Lineage Tracking using `BPF_MAP_TYPE_HASH` to atomically enforce policy inheritance at `task_alloc`.
+
+
+* **M8: "Citadel" (Current Release Candidate) [ACTIVE]**
+* *Focus:* Fileless Malware & Memory Defense.
+* *Features:* Anti-Memfd (hooks `memfd_create`), Anti-LD_PRELOAD injection.
+
+
+
+## Usage (M4.0)
 
 ### 1. Build The Engine
 
+Requires `libseccomp-dev`.
+
 ```bash
-# Requires libseccomp-dev
 make clean && make
+
 ```
 
 ### 2. Start The Defense Grid
 
-You must run the Brain (Logic) and the Body (Interceptor) together.
+The architecture requires running the Logic Core (Brain) and the Interceptor (Body) simultaneously.
 
-**Terminal 1: The Brain**
+**Terminal 1: The Brain (Logic)**
 
 ```bash
 python3 src/analysis/brain.py
+
 ```
 
 **Terminal 2: The Body (Interceptor)**
@@ -121,100 +113,31 @@ python3 src/analysis/brain.py
 ```bash
 # Protect a shell (and all its children)
 sudo ./bin/sentinel /bin/bash
-```
-
------
-
-## [0x06] Technical Specifications (M4.0)
-
-### The "Auto-DLP" Bridge
-
-Sentinel M4 retains the bridge between userspace and kernelspace.
-
-1. **Trigger:** User opens `top_secret.pdf`.
-1. **Analysis:** Brain tags file as `SENSITIVE_USER_FILE`.
-1. **Action:** Brain writes the filename to `signatures.txt`.
-1. **Enforcement:** Hyperion XDP (Network Firewall) reads the signature and instantly drops any outgoing packet containing that filename.
-
------
-
-## [0x07] Roadmap: The Evolution to M8 (eBPF)
-
-Sentinel is currently transitioning from Phase 2 (Seccomp/M4) to Phase 3 (eBPF-LSM/M8) to address advanced evasion techniques used by targeted threat actors.
-
-### M5: "Project Ocular" (Observability Gap)
-
-- **Problem:** Seccomp could block calls, but couldn't see data (e.g., it sees `openat` but not the filename if the pointer is complex).
-- **Solution:** Introduced eBPF `fentry` hooks for deep argument inspection.
-- **Status:** `COMPLETED` -- Replaced Python ptrace logger with C-based BPF ring buffers.
-
-### M6: "The Iron Gate" (LSM Migration)
-
-- **Problem:** Seccomp is vulnerable to Time-of-Check-Time-of-Use (TOCTOU) races in complex container environments.
-- **Solution:** Migrated enforcement from syscall-entry (Seccomp) to LSM Hooks (`security_bprm_check`, `security_file_open`).
-- **Impact:** Enforcement now happens after the kernel resolves paths, eliminating race conditions.
-- **Status:** `COMPLETED` -- Core Engine Ported.
-
-### M7: "The Bloodline" (Inheritance Tracking)
-
-- **Problem:** The "Fork Loophole." A malicious process could `fork()` rapidly, and the child would execute before the userspace supervisor could attach.
-- **Solution:** Implemented Kernel-Space Lineage Tracking.
-  - Used `BPF_MAP_TYPE_HASH` to store parent-child relationships.
-  - Enforced policy inheritance atomically at `task_alloc`.
-- **Status:** `COMPLETED` -- This is the "Fork-Evasion" fix.
-
-### M8: "Citadel" (Current Release Candidate)
-
-- **Focus:** Fileless Malware & Memory Defense.
-- **Features:**
-  - **Anti-Memfd:** Hooks `memfd_create` to detect fileless ELF loading (TeamTNT tactic).
-  - **Ghost-Buster:** Detects `LD_PRELOAD` injection attempts.
-  - **Optimization:** Code path optimized to `<5us` latency.
-- **Status:** `ACTIVE RESEARCH`
-
-> [!WARNING]
-> M8 is under active development. The eBPF-LSM engine (`src/lsm/`) is functional but the API surface may change between milestones.
-
------
-
-## [0x08] Project Structure
 
 ```
+
+## Repository Structure
+
+```text
 sentinel-runtime/
-+-- bin/                        # Compiled Binaries (M4)
-|   +-- sentinel                # The M4 Engine (Interceptor)
-|   +-- m4_test                 # Red Team Validator
-|   +-- bench_throughput        # Performance Benchmark
-+-- src/
-|   +-- engine/                 # [C] Seccomp Interceptor (M4)
-|   |   +-- main.c              # Seccomp-BPF & ADDFD Logic
-|   |   +-- logger.c            # IPC Messaging
-|   |   +-- fdmap.c             # File Descriptor Tracking
-|   +-- analysis/               # [Python] Semantic Supervisor
-|   |   +-- brain.py            # Decision Core
-|   |   +-- semantic.py         # Path Classification
-|   |   +-- state_machine.py    # Kill-Chain Logic
-|   +-- lsm/                    # [C/BPF] eBPF-LSM Engine (M8)
-|       +-- sentinel_lsm.c      # BPF Program (Exec/Fork/GC)
-|       +-- sentinel_loader.c   # Userspace Loader & Map Manager
-|       +-- Makefile             # Build System
-|       +-- tests/
-|           +-- sentinel_top.c  # Live TUI Dashboard
-|           +-- torture.c       # Fork-Storm Stress Test
-|           +-- jailbreak.c     # Escape Attempt Simulator
-|           +-- demos/          # Live Demo Scripts
-+-- docs/
-|   +-- MITRE_MAPPING.md        # ATT&CK Framework Alignment
-|   +-- papers/                 # Research References
-+-- benchmarks/                 # Performance Data
-+-- assets/                     # Demo Recordings
-+-- Makefile                    # Build Configuration
-+-- README.md                   # This File
+├── bin/                    # Compiled Binaries (M4)
+├── src/
+│   ├── engine/             # [C] Seccomp Interceptor (M4)
+│   │   ├── main.c          # Seccomp-BPF & ADDFD Logic
+│   │   └── fdmap.c         # File Descriptor Tracking
+│   ├── analysis/           # [Python] Semantic Supervisor
+│   │   ├── brain.py        # Decision Core
+│   │   └── semantic.py     # Path Classification
+│   └── lsm/                # [C/BPF] eBPF-LSM Engine (M8)
+│       ├── sentinel_lsm.c  # BPF Program (Exec/Fork/GC)
+│       └── tests/          # Red Team Tools (Torture/Jailbreak)
+├── docs/
+│   └── MITRE_MAPPING.md    # ATT&CK Framework Alignment
+└── benchmarks/             # Performance Data
+
 ```
 
------
-
-## [0x09] Citation
+## Citation
 
 ```bibtex
 @software{sentinel2026,
@@ -225,4 +148,8 @@ sentinel-runtime/
   institution = {Research Artifact},
   url         = {https://github.com/nevinshine/sentinel-runtime}
 }
+
 ```
+---
+
+Nevin Shine (System Security Student) @ 2026
